@@ -8,11 +8,18 @@ Remote control your Ubuntu desktop from your phone over Tailscale.
 - **Phone Away Lock** — Auto-locks PC when your phone disconnects from the network
 - **Power Controls** — Shutdown and reboot with confirmation dialogs
 - **Volume Control** — Slider to adjust system volume
-- **System Monitor** — Live CPU, RAM, and disk usage
+- **System Monitor** — Live CPU, RAM, disk usage, bandwidth, and active window
 - **Screenshots** — Capture and view your desktop remotely
+- **File Browser** — Browse, download, and delete files in your home directory
 - **Clipboard Sync** — Read and write PC clipboard from your phone
+- **Terminal** — Full interactive PTY shell via WebSocket (xterm.js)
 - **Desktop Notifications** — Send notifications to your PC
-- **Intruder Alert** — Push notification on failed login attempts
+- **Wake-on-LAN** — Send magic packets to wake PCs on your network
+- **Fake Busy Screen** — Display a fake "updating" screen on your PC
+- **Webcam Monitor** — Check webcam status and kill active processes
+- **Network Scanner** — Discover devices on your LAN with hostname resolution
+- **Uptime History** — View recent boot/shutdown history
+- **Intruder Alert** — Push notification + photo on failed login attempts
 - **Audit Log** — Track all remote actions with timestamps
 
 ## Stack
@@ -45,7 +52,7 @@ sudo apt install openssh-server scrot xdotool xclip
 ### 2. Install Python packages
 
 ```bash
-pip install fastapi uvicorn python-pam psutil python-dotenv
+pip install fastapi uvicorn python-pam psutil python-dotenv websockets
 ```
 
 ### 3. Configure environment
@@ -115,6 +122,17 @@ Mobile `mobile/.env`:
 |---|---|
 | `EXPO_PUBLIC_SERVER` | `http://<TAILSCALE_IP>:<SERVER_PORT>` |
 
+## App Navigation
+
+The mobile app has 4 bottom tabs:
+
+| Tab | Screens |
+|---|---|
+| **Home** | Lock/unlock, phone watch, connection status. Links to Monitor and Log sub-screens. |
+| **Controls** | Power, volume, notifications, Wake-on-LAN, fake busy |
+| **Files** | File browser + clipboard sync (tab switcher) |
+| **Terminal** | Full interactive PTY shell |
+
 ## API Endpoints
 
 All endpoints require `x-pin` header (your Linux login password) unless noted.
@@ -131,14 +149,29 @@ All endpoints require `x-pin` header (your Linux login password) unless noted.
 | GET | `/volume` | Current volume % |
 | POST | `/volume` | Set volume `{"level": 0-100}` |
 | GET | `/stats` | CPU / RAM / disk usage |
+| GET | `/bandwidth` | Upload/download speed and totals |
 | POST | `/notify` | Desktop notification `{"message": "..."}` |
 | GET | `/screenshot` | Screen capture (base64 JPEG) |
 | GET | `/active-window` | Focused window title |
 | GET | `/clipboard` | PC clipboard contents |
 | POST | `/clipboard` | Set clipboard `{"text": "..."}` |
+| GET | `/files` | List directory `?path=/home/user/...` |
+| GET | `/files/download` | Download file `?path=...` |
+| POST | `/files/delete` | Delete file/dir `{"path": "..."}` |
+| GET | `/webcam/status` | Webcam active state and processes |
+| POST | `/webcam/kill` | Kill webcam processes |
+| GET | `/network/scan` | Scan LAN for devices (ARP + mDNS) |
+| GET | `/uptime/history` | Boot/shutdown history |
+| POST | `/wol` | Wake-on-LAN `{"mac": "AA:BB:CC:DD:EE:FF"}` |
+| POST | `/fake-busy` | Activate fake busy screen |
+| POST | `/fake-busy/dismiss` | Dismiss fake busy screen |
+| GET | `/fake-busy/status` | Fake busy active state |
 | GET | `/audit` | Last 50 audit entries |
-| POST | `/register-token` | Store Expo push token `{"token": "..."}` |
+| POST | `/audit/clear` | Clear audit log |
+| GET | `/intruder/photo` | Last intruder photo (base64 JPEG) |
 | POST | `/intruder` | Trigger intruder alert (localhost only, no auth) |
+| POST | `/register-token` | Store Expo push token `{"token": "..."}` |
+| WS | `/ws/terminal` | Interactive PTY shell `?pin=...` |
 
 ## Services
 
