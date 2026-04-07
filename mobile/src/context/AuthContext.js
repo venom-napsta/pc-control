@@ -3,7 +3,7 @@ import { Alert, Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 
-const SERVER = process.env.EXPO_PUBLIC_SERVER || "http://localhost:8000";
+const SERVER = process.env.EXPO_PUBLIC_SERVER || "http://localhost:2000";
 
 const AuthContext = createContext(null);
 

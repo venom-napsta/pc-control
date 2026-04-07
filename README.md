@@ -111,7 +111,7 @@ Copy `.env.example` to `.env` and fill in your values:
 |---|---|---|
 | `LINUX_USER` | Your Linux username | `whoami` |
 | `LINUX_UID` | Your user ID | `id -u` |
-| `SERVER_PORT` | FastAPI server port | Default: `8000` |
+| `SERVER_PORT` | FastAPI server port | Default: `2000` |
 | `TAILSCALE_IP` | PC's Tailscale IP | `tailscale ip -4` |
 | `HOME_LAN_IP` | PC's LAN IP | `hostname -I \| awk '{print $1}'` |
 | `PHONE_HOTSPOT_IP` | Phone IP on hotspot | Check phone settings or `arp -a` |

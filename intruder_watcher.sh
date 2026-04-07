@@ -6,7 +6,7 @@ set -a
 source "$SCRIPT_DIR/.env"
 set +a
 
-PORT="${SERVER_PORT:-8000}"
+PORT="${SERVER_PORT:-2000}"
 
 tail -F /var/log/auth.log 2>/dev/null | while read -r line; do
   if echo "$line" | grep -qE "(gdm|login|sudo).*authentication failure"; then

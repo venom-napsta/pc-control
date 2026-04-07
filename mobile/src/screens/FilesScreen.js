@@ -80,7 +80,7 @@ export function FilesScreen() {
   const [fetching, setFetching] = useState(false);
   const [pushing, setPushing] = useState(false);
 
-  const SERVER = process.env.EXPO_PUBLIC_SERVER || "http://localhost:8000";
+  const SERVER = process.env.EXPO_PUBLIC_SERVER || "http://localhost:2000";
 
   const fetchFiles = useCallback(async (dirPath = null) => {
     setLoading(true);

@@ -26,7 +26,7 @@ const EXTRA_KEYS = [
   { label: "_", data: "_" },
 ];
 
-const SERVER = process.env.EXPO_PUBLIC_SERVER || "http://localhost:8000";
+const SERVER = process.env.EXPO_PUBLIC_SERVER || "http://localhost:2000";
 
 function getTerminalHTML(serverUrl, pin) {
   const wsUrl = serverUrl.replace("http://", "ws://").replace("https://", "wss://");
