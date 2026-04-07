@@ -1,0 +1,14 @@
+.env
+mobile/.env
+push_token.json
+audit.log
+*.log
+__pycache__/
+*.pyc
+*.pyo
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/build/
+.DS_Store
+Thumbs.db
