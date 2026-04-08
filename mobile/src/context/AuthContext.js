@@ -2,8 +2,9 @@ import { createContext, useContext, useState, useCallback, useEffect } from "rea
 import { Alert, Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
+import Constants from "expo-constants";
 
-const SERVER = process.env.EXPO_PUBLIC_SERVER || "http://localhost:2000";
+const SERVER = Constants.expoConfig?.extra?.serverUrl || process.env.EXPO_PUBLIC_SERVER || "http://localhost:2000";
 
 const AuthContext = createContext(null);
 

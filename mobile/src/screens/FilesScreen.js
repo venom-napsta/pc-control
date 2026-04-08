@@ -8,6 +8,7 @@ import { useNavigation } from "@react-navigation/native";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import * as Clipboard from "expo-clipboard";
+import Constants from "expo-constants";
 import { useAuth } from "../context/AuthContext";
 import { ScreenShell } from "../components/ScreenShell";
 import { Card } from "../components/Card";
@@ -80,7 +81,7 @@ export function FilesScreen() {
   const [fetching, setFetching] = useState(false);
   const [pushing, setPushing] = useState(false);
 
-  const SERVER = process.env.EXPO_PUBLIC_SERVER || "http://localhost:2000";
+  const SERVER = Constants.expoConfig?.extra?.serverUrl || process.env.EXPO_PUBLIC_SERVER || "http://localhost:2000";
 
   const fetchFiles = useCallback(async (dirPath = null) => {
     setLoading(true);

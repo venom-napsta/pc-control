@@ -4,6 +4,7 @@ import {
 } from "react-native";
 import { WebView } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
+import Constants from "expo-constants";
 import { useAuth } from "../context/AuthContext";
 import { colors, spacing, font, radius, mono } from "../theme";
 
@@ -26,7 +27,7 @@ const EXTRA_KEYS = [
   { label: "_", data: "_" },
 ];
 
-const SERVER = process.env.EXPO_PUBLIC_SERVER || "http://localhost:2000";
+const SERVER = Constants.expoConfig?.extra?.serverUrl || process.env.EXPO_PUBLIC_SERVER || "http://localhost:2000";
 
 function getTerminalHTML(serverUrl, pin) {
   const wsUrl = serverUrl.replace("http://", "ws://").replace("https://", "wss://");

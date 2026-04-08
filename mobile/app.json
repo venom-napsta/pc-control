@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0B1420"
     },
     "ios": {
       "supportsTablet": true
@@ -18,7 +18,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0B1420"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.napstakid.pc_control"
@@ -27,6 +27,7 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
+      "serverUrl": "http://100.64.0.1:2000",
       "eas": {
         "projectId": "d915f8ae-1e5f-4764-9478-ff23f069c381"
       }

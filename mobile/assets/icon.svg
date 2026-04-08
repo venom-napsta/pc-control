@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1420"/>
+      <stop offset="100%" stop-color="#111D2B"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00D9C4"/>
+      <stop offset="100%" stop-color="#00A896"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+  <!-- Monitor body -->
+  <rect x="220" y="240" width="520" height="380" rx="30" fill="none" stroke="url(#glow)" stroke-width="16"/>
+  <!-- Screen inner -->
+  <rect x="248" y="268" width="464" height="324" rx="16" fill="#0B1420"/>
+  <!-- Terminal prompt -->
+  <text x="300" y="400" font-family="monospace" font-size="100" font-weight="bold" fill="#00D9C4">$_</text>
+  <!-- Terminal text lines -->
+  <rect x="300" y="440" width="260" height="8" rx="4" fill="#094A52"/>
+  <rect x="300" y="472" width="180" height="8" rx="4" fill="#094A52"/>
+  <rect x="300" y="504" width="220" height="8" rx="4" fill="#094A52"/>
+  <!-- Monitor stand -->
+  <rect x="430" y="620" width="120" height="24" rx="6" fill="#1A3444"/>
+  <rect x="370" y="644" width="240" height="16" rx="8" fill="#1A3444"/>
+  <!-- Signal waves (remote control) -->
+  <path d="M770 380 Q820 430 770 480" fill="none" stroke="#00D9C4" stroke-width="12" stroke-linecap="round" opacity="0.9"/>
+  <path d="M806 346 Q876 430 806 514" fill="none" stroke="#00D9C4" stroke-width="12" stroke-linecap="round" opacity="0.55"/>
+  <path d="M842 312 Q932 430 842 548" fill="none" stroke="#00D9C4" stroke-width="12" stroke-linecap="round" opacity="0.25"/>
+  <!-- Lock icon bottom right -->
+  <rect x="750" y="680" width="80" height="90" rx="12" fill="none" stroke="#00D9C4" stroke-width="8" opacity="0.6"/>
+  <path d="M770 680 V650 Q790 620 810 650 V680" fill="none" stroke="#00D9C4" stroke-width="8" stroke-linecap="round" opacity="0.6"/>
+  <circle cx="790" cy="720" r="10" fill="#00D9C4" opacity="0.6"/>
+</svg>
