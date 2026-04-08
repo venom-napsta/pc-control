@@ -1,11 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
-  View, Text, ActivityIndicator, Alert, Switch,
+  View, Text, ActivityIndicator, Switch,
   Pressable, Animated, Easing, StyleSheet,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
+import { useError } from "../context/ErrorContext";
 import { usePolling } from "../hooks/usePolling";
 import { ScreenShell } from "../components/ScreenShell";
 import { Card } from "../components/Card";
@@ -16,6 +17,7 @@ import { colors, spacing, font, radius, mono } from "../theme";
 
 export function HomeScreen() {
   const { api, logout } = useAuth();
+  const { showError } = useError();
   const navigation = useNavigation();
   const [locked, setLocked] = useState(null);
   const [phoneWatch, setPhoneWatch] = useState(null);
@@ -71,8 +73,10 @@ export function HomeScreen() {
       setLatency(Date.now() - t0);
       setLocked(s.locked);
       setPhoneWatch(w.active);
-    } catch {}
-  }, [api]);
+    } catch (e) {
+      showError("STATUS FETCH FAILED", e);
+    }
+  }, [api, showError]);
 
   const { refreshing, onRefresh } = usePolling(fetchAll, 5000);
 
@@ -87,8 +91,8 @@ export function HomeScreen() {
     try {
       await api("POST", locked ? "/unlock" : "/lock");
       await fetchAll();
-    } catch {
-      Alert.alert("Error", "Could not reach PC");
+    } catch (e) {
+      showError("LOCK TOGGLE FAILED", e);
     }
     setToggling(false);
   };
@@ -98,8 +102,8 @@ export function HomeScreen() {
     try {
       const data = await api("POST", "/phone-watch/toggle");
       setPhoneWatch(data.active);
-    } catch {
-      Alert.alert("Error", "Could not toggle phone watch");
+    } catch (e) {
+      showError("PHONE WATCH FAILED", e);
     }
     setWatchToggling(false);
   };

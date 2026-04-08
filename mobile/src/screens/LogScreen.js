@@ -8,6 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
 import { useAuth } from "../context/AuthContext";
+import { useError } from "../context/ErrorContext";
 import { usePolling } from "../hooks/usePolling";
 import { Card } from "../components/Card";
 import { SectionHeader } from "../components/SectionHeader";
@@ -42,6 +43,7 @@ function getActionMeta(action) {
 
 export function LogScreen() {
   const { api } = useAuth();
+  const { showError } = useError();
   const navigation = useNavigation();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,9 +52,11 @@ export function LogScreen() {
     try {
       const data = await api("GET", "/audit");
       setEntries([...data.entries].reverse());
-    } catch {}
+    } catch (e) {
+      showError("AUDIT LOG FAILED", e);
+    }
     setLoading(false);
-  }, [api]);
+  }, [api, showError]);
 
   const { refreshing, onRefresh } = usePolling(fetchLog, 15000);
 
@@ -66,8 +70,8 @@ export function LogScreen() {
           try {
             await api("POST", "/audit/clear");
             setEntries([]);
-          } catch {
-            Alert.alert("Error", "Failed to clear log");
+          } catch (e) {
+            showError("LOG PURGE FAILED", e);
           }
         },
       },

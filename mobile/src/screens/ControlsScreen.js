@@ -6,6 +6,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { useAuth } from "../context/AuthContext";
+import { useError } from "../context/ErrorContext";
 import { ScreenShell } from "../components/ScreenShell";
 import { Card } from "../components/Card";
 import { PrimaryButton } from "../components/Button";
@@ -29,6 +30,7 @@ function PowerButton({ icon, label, onPress }) {
 
 export function ControlsScreen() {
   const { api } = useAuth();
+  const { showError } = useError();
   const [volume, setVolume] = useState(50);
   const [volumeLoaded, setVolumeLoaded] = useState(false);
   const [notifyText, setNotifyText] = useState("");
@@ -38,6 +40,9 @@ export function ControlsScreen() {
   const [wolMac, setWolMac] = useState("");
   const [wolSending, setWolSending] = useState(false);
 
+  // Media state
+  const [playing, setPlaying] = useState(false);
+
   // Fake busy state
   const [fakeBusy, setFakeBusy] = useState(false);
   const [fakeBusyLoading, setFakeBusyLoading] = useState(false);
@@ -45,11 +50,14 @@ export function ControlsScreen() {
   useEffect(() => {
     api("GET", "/volume")
       .then((d) => { setVolume(d.level); setVolumeLoaded(true); })
+      .catch((e) => showError("VOLUME LOAD FAILED", e));
+    api("GET", "/media/status")
+      .then((d) => setPlaying(d.playing))
       .catch(() => {});
     api("GET", "/fake-busy/status")
       .then((d) => setFakeBusy(d.active))
-      .catch(() => {});
-  }, [api]);
+      .catch((e) => showError("BUSY STATUS FAILED", e));
+  }, [api, showError]);
 
   const confirmAction = (title, action, endpoint) => {
     Alert.alert(title, "Are you sure?", [
@@ -59,15 +67,25 @@ export function ControlsScreen() {
         style: "destructive",
         onPress: async () => {
           try { await api("POST", endpoint); }
-          catch { Alert.alert("Error", `Failed to ${action.toLowerCase()}`); }
+          catch (e) { showError(`${action.toUpperCase()} FAILED`, e); }
         },
       },
     ]);
   };
 
   const commitVolume = useCallback(async (val) => {
-    try { await api("POST", "/volume", { level: Math.round(val) }); } catch {}
-  }, [api]);
+    try { await api("POST", "/volume", { level: Math.round(val) }); }
+    catch (e) { showError("VOLUME SET FAILED", e); }
+  }, [api, showError]);
+
+  const toggleMedia = async () => {
+    try {
+      const data = await api("POST", "/media/toggle");
+      setPlaying(data.playing);
+    } catch (e) {
+      showError("MEDIA TOGGLE FAILED", e);
+    }
+  };
 
   const sendNotify = async () => {
     if (!notifyText.trim()) return;
@@ -76,8 +94,8 @@ export function ControlsScreen() {
       await api("POST", "/notify", { message: notifyText });
       setNotifyText("");
       Alert.alert("Sent", "Notification delivered to PC");
-    } catch {
-      Alert.alert("Error", "Failed to send notification");
+    } catch (e) {
+      showError("NOTIFY FAILED", e);
     }
     setSending(false);
   };
@@ -89,7 +107,7 @@ export function ControlsScreen() {
       await api("POST", "/wol", { mac: wolMac.trim() });
       Alert.alert("Sent", "Magic packet sent — PC should wake up shortly");
     } catch (e) {
-      Alert.alert("Error", "Failed to send WoL packet");
+      showError("WOL FAILED", e);
     }
     setWolSending(false);
   };
@@ -104,8 +122,8 @@ export function ControlsScreen() {
         await api("POST", "/fake-busy");
         setFakeBusy(true);
       }
-    } catch {
-      Alert.alert("Error", "Failed to toggle fake busy screen");
+    } catch (e) {
+      showError("FAKE BUSY FAILED", e);
     }
     setFakeBusyLoading(false);
   };
@@ -135,7 +153,19 @@ export function ControlsScreen() {
             <Ionicons name="volume-high-outline" size={18} color={colors.text} />
             <Text style={styles.cardTitle}>VOL</Text>
           </View>
-          <Text style={styles.volValue}>{volume}%</Text>
+          <View style={styles.volumeRight}>
+            <Text style={styles.volValue}>{volume}%</Text>
+            <Pressable
+              onPress={toggleMedia}
+              style={({ pressed }) => [styles.mediaBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Ionicons
+                name={playing ? "pause" : "play"}
+                size={16}
+                color={playing ? colors.primary : colors.text}
+              />
+            </Pressable>
+          </View>
         </View>
         {volumeLoaded && (
           <Slider
@@ -280,11 +310,26 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginLeft: 26,
   },
+  volumeRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
   volValue: {
     color: colors.primary,
     fontSize: font.lg,
     fontWeight: "700",
     fontFamily: mono,
+  },
+  mediaBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceHi,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
   },
   input: {
     backgroundColor: colors.bg,

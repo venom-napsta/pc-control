@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
+import { ErrorProvider } from "./src/context/ErrorContext";
 import { colors } from "./src/theme";
 import { TabBar } from "./src/components/TabBar";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -66,7 +67,9 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <Root />
+        <ErrorProvider>
+          <Root />
+        </ErrorProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

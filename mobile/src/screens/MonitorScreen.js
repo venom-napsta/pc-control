@@ -1,11 +1,12 @@
 import { useState, useCallback, useEffect } from "react";
 import {
-  View, Text, Image, Modal, Alert, ActivityIndicator,
+  View, Text, Image, Modal, ActivityIndicator,
   TouchableOpacity, Pressable, StyleSheet,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
+import { useError } from "../context/ErrorContext";
 import { usePolling } from "../hooks/usePolling";
 import { ScreenShell } from "../components/ScreenShell";
 import { Card } from "../components/Card";
@@ -40,6 +41,7 @@ function formatBytes(bytes) {
 
 export function MonitorScreen() {
   const { api } = useAuth();
+  const { showError } = useError();
   const navigation = useNavigation();
   const [stats, setStats] = useState(null);
   const [activeWin, setActiveWin] = useState("");
@@ -83,17 +85,17 @@ export function MonitorScreen() {
 
   // Fetch uptime history once
   useEffect(() => {
-    api("GET", "/uptime/history").then(setUptimeHistory).catch(() => {});
-    api("GET", "/intruder/photo").then(setIntruderPhoto).catch(() => {});
-  }, [api]);
+    api("GET", "/uptime/history").then(setUptimeHistory).catch((e) => showError("UPTIME HISTORY FAILED", e));
+    api("GET", "/intruder/photo").then(setIntruderPhoto).catch((e) => showError("INTRUDER PHOTO FAILED", e));
+  }, [api, showError]);
 
   const takeScreenshot = async () => {
     setSsLoading(true);
     try {
       const data = await api("GET", "/screenshot");
       setScreenshot(data.image);
-    } catch {
-      Alert.alert("Error", "Failed to take screenshot");
+    } catch (e) {
+      showError("SCREENSHOT FAILED", e);
     }
     setSsLoading(false);
   };
@@ -103,8 +105,8 @@ export function MonitorScreen() {
     try {
       const data = await api("GET", "/network/scan");
       setNetworkDevices(data.devices);
-    } catch {
-      Alert.alert("Error", "Network scan failed");
+    } catch (e) {
+      showError("NETWORK SCAN FAILED", e);
     }
     setNetworkScanning(false);
   };
@@ -113,10 +115,9 @@ export function MonitorScreen() {
     setWebcamKilling(true);
     try {
       await api("POST", "/webcam/kill");
-      Alert.alert("Done", "Webcam processes terminated");
       fetchStats();
-    } catch {
-      Alert.alert("Error", "Failed to kill webcam");
+    } catch (e) {
+      showError("WEBCAM KILL FAILED", e);
     }
     setWebcamKilling(false);
   };

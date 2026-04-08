@@ -10,6 +10,7 @@ import * as Sharing from "expo-sharing";
 import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
 import { useAuth } from "../context/AuthContext";
+import { useError } from "../context/ErrorContext";
 import { ScreenShell } from "../components/ScreenShell";
 import { Card } from "../components/Card";
 import { PrimaryButton } from "../components/Button";
@@ -62,6 +63,7 @@ function IconBtn({ icon, label, onPress, color = colors.textMuted }) {
 
 export function FilesScreen() {
   const { api, password } = useAuth();
+  const { showError } = useError();
   const navigation = useNavigation();
 
   // Tab state: "browse" or "clipboard"
@@ -91,8 +93,8 @@ export function FilesScreen() {
       setPath(data.path);
       setParentPath(data.parent);
       setEntries(data.entries || []);
-    } catch {
-      Alert.alert("Error", "Failed to load directory");
+    } catch (e) {
+      showError("DIRECTORY LOAD FAILED", e);
     }
     setLoading(false);
   }, [api]);
@@ -125,8 +127,8 @@ export function FilesScreen() {
       } else {
         Alert.alert("Downloaded", `Saved to ${result.uri}`);
       }
-    } catch {
-      Alert.alert("Error", "Download failed");
+    } catch (e) {
+      showError("DOWNLOAD FAILED", e);
     }
     setDownloading(null);
   };
@@ -141,8 +143,8 @@ export function FilesScreen() {
           try {
             await api("POST", "/files/delete", { path: itemPath });
             fetchFiles(path);
-          } catch {
-            Alert.alert("Error", "Delete failed");
+          } catch (e) {
+            showError("DELETE FAILED", e);
           }
         },
       },
@@ -154,8 +156,8 @@ export function FilesScreen() {
     try {
       const data = await api("GET", "/clipboard");
       setPcClipboard(data.text);
-    } catch {
-      Alert.alert("Error", "Failed to fetch clipboard");
+    } catch (e) {
+      showError("CLIPBOARD FETCH FAILED", e);
     }
     setFetching(false);
   };
@@ -166,8 +168,8 @@ export function FilesScreen() {
     try {
       await api("POST", "/clipboard", { text: phoneText });
       Alert.alert("Sent", "Clipboard set on PC");
-    } catch {
-      Alert.alert("Error", "Failed to set clipboard");
+    } catch (e) {
+      showError("CLIPBOARD PUSH FAILED", e);
     }
     setPushing(false);
   };

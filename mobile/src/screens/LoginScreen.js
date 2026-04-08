@@ -10,7 +10,7 @@ import { OrbitRing } from "../components/OrbitRing";
 import { colors, spacing, radius, font, mono } from "../theme";
 
 export function LoginScreen() {
-  const { password, setPassword, loading, authenticate } = useAuth();
+  const { password, setPassword, loading, authenticate, authError } = useAuth();
 
   // Logo glow
   const glow = useRef(new Animated.Value(0.4)).current;
@@ -136,9 +136,17 @@ export function LoginScreen() {
         </Pressable>
       </Animated.View>
 
+      {/* Auth error */}
+      {authError && (
+        <Animated.View style={[styles.errorRow, { opacity: btnFade }]}>
+          <Ionicons name="alert-circle" size={14} color={colors.danger} />
+          <Text style={styles.errorText}>{authError}</Text>
+        </Animated.View>
+      )}
+
       {/* Version badge */}
       <Animated.Text style={[styles.version, { opacity: btnFade }]}>
-        v1.0 // secure link
+        v1.1.1 // secure link
       </Animated.Text>
     </ScreenShell>
   );
@@ -211,6 +219,25 @@ const styles = StyleSheet.create({
     fontSize: font.lg,
     fontWeight: "700",
     textAlign: "center",
+  },
+  errorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: "rgba(239,83,80,0.1)",
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: "rgba(239,83,80,0.25)",
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: font.xs,
+    fontFamily: mono,
+    fontWeight: "600",
+    flex: 1,
   },
   version: {
     color: colors.textDim,
