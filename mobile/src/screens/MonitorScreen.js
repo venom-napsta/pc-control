@@ -286,7 +286,7 @@ export function MonitorScreen() {
             <ActivityIndicator color={colors.primary} size="small" />
           ) : (
             <>
-              <Ionicons name="radar-outline" size={16} color={colors.primary} />
+              <Ionicons name="search-outline" size={16} color={colors.primary} />
               <Text style={styles.scanBtnText}>SCAN NETWORK</Text>
             </>
           )}

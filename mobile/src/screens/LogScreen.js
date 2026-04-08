@@ -1,8 +1,9 @@
 import { useState, useCallback } from "react";
 import {
-  View, Text, SafeAreaView, ScrollView, RefreshControl,
+  View, Text, ScrollView, RefreshControl,
   ActivityIndicator, Alert, Pressable, StyleSheet,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
@@ -152,7 +153,7 @@ export function LogScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  header: { padding: spacing.xl, paddingTop: spacing.huge },
+  header: { padding: spacing.xl, paddingTop: spacing.md },
   backRow: {
     flexDirection: "row",
     alignItems: "center",

@@ -18,11 +18,11 @@ function TabItem({ route, focused, onPress }) {
 
   useEffect(() => {
     if (focused && !prevFocused.current) {
-      scale.setValue(0.65);
+      scale.setValue(0.85);
       Animated.spring(scale, {
         toValue: 1,
-        friction: 4,
-        tension: 300,
+        friction: 8,
+        tension: 120,
         useNativeDriver: true,
       }).start();
     }

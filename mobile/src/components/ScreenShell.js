@@ -1,4 +1,5 @@
-import { SafeAreaView, ScrollView, RefreshControl, StyleSheet } from "react-native";
+import { ScrollView, RefreshControl, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, spacing } from "../theme";
 
 export function ScreenShell({ children, refreshing, onRefresh, centered, style }) {
@@ -35,5 +36,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: spacing.xxl,
   },
-  padded: { padding: spacing.xl, paddingTop: spacing.huge },
+  padded: { padding: spacing.xl, paddingTop: spacing.md },
 });

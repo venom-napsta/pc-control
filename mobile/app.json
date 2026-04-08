@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "mobile",
+    "name": "PC Control",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -27,7 +27,6 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "serverUrl": "http://100.64.0.1:2000",
       "eas": {
         "projectId": "d915f8ae-1e5f-4764-9478-ff23f069c381"
       }
