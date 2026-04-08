@@ -86,7 +86,7 @@ export function MonitorScreen() {
   // Fetch uptime history once
   useEffect(() => {
     api("GET", "/uptime/history").then(setUptimeHistory).catch((e) => showError("UPTIME HISTORY FAILED", e));
-    api("GET", "/intruder/photo").then(setIntruderPhoto).catch((e) => showError("INTRUDER PHOTO FAILED", e));
+    api("GET", "/intruder/photo").then(setIntruderPhoto).catch(() => {});
   }, [api, showError]);
 
   const takeScreenshot = async () => {

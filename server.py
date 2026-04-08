@@ -294,6 +294,31 @@ def set_volume(body: VolumeBody, req: Request, x_pin: str = Header(...)):
     return {"level": level}
 
 
+# ── Media Playback ─────────────────────────────────────
+@app.get("/media/status")
+def media_status(x_pin: str = Header(...)):
+    verify(x_pin)
+    r = subprocess.run(
+        ["playerctl", "status"],
+        capture_output=True, text=True, env=desk_env(),
+    )
+    status = r.stdout.strip().lower()
+    return {"playing": status == "playing"}
+
+
+@app.post("/media/toggle")
+def media_toggle(req: Request, x_pin: str = Header(...)):
+    verify(x_pin)
+    subprocess.run(["playerctl", "play-pause"], env=desk_env())
+    r = subprocess.run(
+        ["playerctl", "status"],
+        capture_output=True, text=True, env=desk_env(),
+    )
+    status = r.stdout.strip().lower()
+    audit("media_toggle", req.client.host)
+    return {"playing": status == "playing"}
+
+
 # ── System Stats ────────────────────────────────────────
 @app.get("/stats")
 def get_stats(x_pin: str = Header(...)):
