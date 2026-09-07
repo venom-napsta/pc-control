@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { Pressable, Text, Animated, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import { colors, font, mono, spacing } from "../theme";
+import { colors, font, mono, radius, spacing } from "../theme";
 
 export function CopyBadge({ text, label = "COPY" }) {
   const [copied, setCopied] = useState(false);
@@ -21,6 +21,9 @@ export function CopyBadge({ text, label = "COPY" }) {
   return (
     <Pressable
       onPress={handleCopy}
+      hitSlop={12}
+      accessibilityRole="button"
+      accessibilityLabel={copied ? "Copied" : "Copy to clipboard"}
       style={({ pressed }) => [styles.badge, pressed && { opacity: 0.6 }]}
     >
       <Animated.View
@@ -46,10 +49,10 @@ const styles = StyleSheet.create({
   badge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: spacing.xs,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     backgroundColor: colors.surfaceHi,
     borderWidth: 1,
     borderColor: colors.primaryDim,
@@ -57,7 +60,7 @@ const styles = StyleSheet.create({
   },
   flashBg: {
     backgroundColor: colors.success,
-    borderRadius: 8,
+    borderRadius: radius.sm,
   },
   text: {
     color: colors.primary,

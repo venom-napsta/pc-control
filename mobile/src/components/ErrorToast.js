@@ -1,9 +1,11 @@
 import { useEffect, useRef } from "react";
 import { View, Text, Pressable, Animated, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, spacing, font, radius, mono } from "../theme";
 
 export function ErrorToast({ error, onDismiss }) {
+  const insets = useSafeAreaInsets();
   const slideY = useRef(new Animated.Value(-120)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -28,9 +30,9 @@ export function ErrorToast({ error, onDismiss }) {
 
   return (
     <Animated.View
-      style={[styles.container, { transform: [{ translateY: slideY }], opacity }]}
+      style={[styles.container, { top: insets.top + spacing.sm, transform: [{ translateY: slideY }], opacity }]}
     >
-      <Pressable onPress={dismiss} style={styles.inner}>
+      <Pressable onPress={dismiss} style={styles.inner} accessibilityRole="button" accessibilityLabel={`Dismiss error: ${error.title}`}>
         {/* Left accent bar */}
         <View style={styles.accent} />
 
@@ -45,7 +47,7 @@ export function ErrorToast({ error, onDismiss }) {
           </View>
 
           {/* Message */}
-          <Text style={styles.message} numberOfLines={2}>{error.message}</Text>
+          <Text style={styles.message} numberOfLines={3}>{error.message}</Text>
 
           {/* Method/endpoint detail */}
           {methodTag && (
@@ -54,7 +56,7 @@ export function ErrorToast({ error, onDismiss }) {
         </View>
 
         {/* Dismiss X */}
-        <Pressable onPress={dismiss} hitSlop={12} style={styles.closeBtn}>
+        <Pressable onPress={dismiss} hitSlop={12} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Dismiss error">
           <Ionicons name="close" size={14} color={colors.textMuted} />
         </Pressable>
       </Pressable>
@@ -65,7 +67,6 @@ export function ErrorToast({ error, onDismiss }) {
 const styles = StyleSheet.create({
   container: {
     position: "absolute",
-    top: 54,
     left: spacing.lg,
     right: spacing.lg,
     zIndex: 9999,
@@ -75,7 +76,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: "rgba(239,83,80,0.3)",
+    borderColor: colors.dangerBorder,
     overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
@@ -108,14 +109,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   statusBadge: {
-    backgroundColor: "rgba(239,83,80,0.15)",
+    backgroundColor: colors.dangerGhost,
     paddingHorizontal: 6,
     paddingVertical: 1,
-    borderRadius: 4,
+    borderRadius: radius.xs,
   },
   statusText: {
     color: colors.danger,
-    fontSize: 10,
+    fontSize: font.xxs,
     fontWeight: "700",
     fontFamily: mono,
   },
@@ -126,8 +127,8 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   detail: {
-    color: colors.textDim,
-    fontSize: 10,
+    color: colors.textMuted,
+    fontSize: font.xxs,
     fontFamily: mono,
     marginTop: 2,
   },
