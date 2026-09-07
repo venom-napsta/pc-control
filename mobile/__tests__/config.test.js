@@ -30,7 +30,7 @@ describe("connectionFailureMessage", () => {
   });
   test("refused connection on the LAN asks about the network, not Tailscale", () => {
     const msg = connectionFailureMessage(netError(), { server: LAN });
-    expect(msg).toMatch(/Can't reach the PC at 192\.168\.1\.215:2000/);
+    expect(msg).toMatch(/Can't reach the PC at 192\.168\.1\.10:2000/);
     expect(msg).toMatch(/same network/);
     expect(msg).not.toMatch(/Tailscale/);
   });
