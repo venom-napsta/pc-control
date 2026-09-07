@@ -2,10 +2,11 @@
   "expo": {
     "name": "PC Control",
     "slug": "mobile",
-    "version": "1.1.1",
-    "orientation": "portrait",
+    "version": "1.2.0",
+    "orientation": "default",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0B1420",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -32,11 +33,26 @@
       }
     },
     "plugins": [
-      ["expo-build-properties", {
-        "android": {
-          "usesCleartextTraffic": true
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true,
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
         }
-      }]
+      ],
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#0B1420"
+        }
+      ]
     ]
   }
 }
