@@ -24,6 +24,7 @@ Remote control your Ubuntu desktop from your phone over Tailscale.
 - **Session login** — The password is exchanged once for a revocable token, so polls no longer carry it. Shutdown, reboot, delete and the terminal still ask for the password
 - **Biometric unlock** — Optionally remember the password in the device keystore and sign in with a fingerprint or face
 - **File upload** — Send a file from the phone or tablet into the folder open on the PC
+- **Image push** — Paste a screenshot from the phone's clipboard, or pick an image, and put it straight onto the PC's clipboard ready to paste — or save it to the PC's Downloads folder instead
 - **Roaming** — The app probes every saved address (Tailscale name, Tailscale IP, LAN, hotspot) and uses the first that answers; addresses are editable in-app
 - **Multi-device** — Phone and tablet both receive push alerts; layouts adapt to tablet widths and rotation
 
@@ -128,7 +129,40 @@ npm install
 npx expo start
 ```
 
-Scan the QR code with Expo Go on your phone.
+Scan the QR code with Expo Go on your phone. There is no `expo-dev-client` and
+no `scheme`, so a dev server can only be loaded by Expo Go — never by an
+installed release build.
+
+If the device is on the PC's hotspot, Metro has to advertise the hotspot
+address or Expo Go times out reaching the bundle:
+
+```bash
+REACT_NATIVE_PACKAGER_HOSTNAME=10.42.0.1 npx expo start --port 8090
+```
+
+then open `exp://10.42.0.1:8090` in Expo Go. The printed QR encodes the LAN
+address, so scanning it will not work from the hotspot.
+
+#### Cloud builds need the address list uploaded first
+
+`EXPO_PUBLIC_SERVERS` is inlined at build time from `mobile/.env`, which is
+gitignored — and EAS Build uploads only git-tracked files. So a cloud build
+sees none of it and `DEFAULT_SERVERS` collapses to `http://localhost:2000`,
+producing an app that reaches nothing. Upload the list once per environment:
+
+```bash
+cd mobile
+set -a; . ./.env; set +a
+eas env:create --name EXPO_PUBLIC_SERVERS --value "$EXPO_PUBLIC_SERVERS" \
+  --visibility sensitive --scope project \
+  --environment development --environment preview --environment production
+
+eas env:list --environment production   # verify before building
+```
+
+Each build profile in `eas.json` names the environment it loads. Note the
+plural: a legacy singular `EXPO_PUBLIC_SERVER` is still honoured, but it holds
+only one address and so silently disables the roaming fallback.
 
 ## Network exposure
 
@@ -174,6 +208,7 @@ Copy `.env.example` to `.env` and fill in your values:
 | `AUTH_MAX_FAILURES` / `AUTH_LOCKOUT_S` | Brute-force lockout threshold and base duration (defaults `5` / `60`) | |
 | `SESSION_TTL` | Idle lifetime of a session token in seconds (default `28800`, `0` disables `/login`) | |
 | `UPLOAD_MAX_BYTES` | Largest accepted upload (default 512 MB) | |
+| `CLIPBOARD_IMAGE_MAX_BYTES` | Largest image accepted onto the clipboard (default 32 MB) | Far lower than an upload: GPaste holds the whole image in its history, and the realistic payload is a screenshot |
 | `PIN_CACHE_TTL` | Seconds a verified PIN is remembered before PAM is asked again (default `300`, `0` disables) | A PAM round trip costs hundreds of ms and the app polls every few seconds |
 
 Mobile `mobile/.env`:
@@ -230,7 +265,8 @@ All endpoints require the `x-pin` header (your Linux login password) unless note
 | POST | `/clipboard` | Set clipboard `{"text": "..."}` |
 | GET | `/files` | List directory `?path=/home/user/...` |
 | GET | `/files/download` | Download file `?path=...` (audited) |
-| POST | `/files/upload` | Receive a file, multipart `file` plus optional `path` form field. Streamed to disk, capped at `UPLOAD_MAX_BYTES`, never overwrites. |
+| POST | `/clipboard/image` | Put an image on the PC clipboard, multipart `file`. The bytes are sniffed for a real image signature rather than trusting the declared content type, capped at `CLIPBOARD_IMAGE_MAX_BYTES`. Handed to GPaste, which keeps its own copy, so the temp file is removed immediately. |
+| POST | `/files/upload` | Receive a file, multipart `file` plus optional `path` form field. Streamed to disk, capped at `UPLOAD_MAX_BYTES`, never overwrites. A named `dest` (`downloads` or `home`) targets a well-known folder without the caller knowing its path — Downloads is localised and relocatable, and a relocation outside `HOME` is ignored. `path` wins over `dest`. |
 | POST | `/files/delete` | Move to Trash `{"path": "..."}`; add `"permanent": true` to delete for good. Refuses the home directory itself; removes symlinks as links. |
 | GET | `/webcam/status` | Webcam active state and processes |
 | POST | `/webcam/kill` | Kill webcam processes |
@@ -265,6 +301,19 @@ journalctl --user -u phone_watch -f
 systemctl --user enable pc_control phone_watch
 systemctl --user disable pc_control phone_watch
 ```
+
+`systemd/code_server.service` also lives here, but it is not part of PC
+Control: it serves VS Code in a browser so the tablet can edit code on this
+machine. It is kept alongside the others so every user unit is in one place.
+
+```bash
+systemctl --user status code_server
+```
+
+It reads its address, password and TLS settings from
+`~/.config/code-server/config.yaml` (mode 0600, since the password is stored
+in plaintext there), listens on 8443 because 8080-8087 are taken by editor
+language servers, and opens on `~/++` rather than all of `$HOME`.
 
 ## Authentication
 
