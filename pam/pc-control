@@ -1,0 +1,12 @@
+# PAM service for PC Control's PIN check.
+#
+# Install:  sudo install -m 644 pam/pc-control /etc/pam.d/pc-control
+# Then set  PAM_SERVICE=pc-control  in .env and restart pc_control.
+#
+# Password check only: no session or credential modules, and no failure delay.
+# The server enforces its own per-IP lockout, and a PAM delay here would hold
+# the server's PAM lock for seconds while a wrong guess is being rejected.
+# pam_unix verifies the server's own account through the setuid unix_chkpwd
+# helper, so the user does NOT need to be in the shadow group.
+auth     required   pam_unix.so nodelay
+account  required   pam_unix.so
