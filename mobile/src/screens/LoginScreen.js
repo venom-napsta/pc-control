@@ -1,16 +1,41 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import {
-  View, Text, TextInput, Animated, Pressable,
-  ActivityIndicator, Easing, StyleSheet,
+  View, Text, Animated, Pressable, Switch, Easing, StyleSheet,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { ScreenShell } from "../components/ScreenShell";
+import { Input } from "../components/Input";
+import { PrimaryButton } from "../components/Button";
 import { OrbitRing } from "../components/OrbitRing";
+import { ServerSettingsSheet } from "../components/ServerSettingsSheet";
+import { loginChrome, useLayout } from "../layout";
+import { useKeyboardVisible } from "../keyboard";
 import { colors, spacing, radius, font, mono } from "../theme";
+import { APP_VERSION } from "../config";
+import { serverLabel, isTailscaleAddress } from "../servers";
+
+function targetText({ loading, server, lastGood, servers }) {
+  const n = servers.length;
+  const plural = n === 1 ? "address" : "addresses";
+  if (loading) return `searching ${n} ${plural}…`;
+  const target = server || lastGood;
+  if (target) return serverLabel(target) + (isTailscaleAddress(target) ? "  //  via tailscale" : "");
+  return n === 0 ? "no server addresses" : `${n} saved ${plural}`;
+}
 
 export function LoginScreen() {
-  const { password, setPassword, loading, authenticate, authError } = useAuth();
+  const {
+    password, setPassword, loading, authenticate, authError,
+    server, lastGood, servers,
+    biometrics = { available: false, saved: false },
+    remember = false, setRememberPassword, unlockWithBiometrics,
+  } = useAuth();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Unmask the password. Off by default; the eye is the only way to turn it on,
+  // and it resets on every mount so a revealed password never outlives a visit
+  // to this screen.
+  const [reveal, setReveal] = useState(false);
 
   // Logo glow
   const glow = useRef(new Animated.Value(0.4)).current;
@@ -64,10 +89,16 @@ export function LoginScreen() {
     return () => { glowAnim.stop(); staggerAnim.stop(); scanAnim.stop(); };
   }, [glow, titleFade, titleSlide, inputFade, inputSlide, btnFade, btnSlide, scanY]);
 
+  const { isLandscape } = useLayout();
+  const keyboardVisible = useKeyboardVisible();
+  const chrome = loginChrome({ keyboardVisible, isLandscape });
+
   const canSubmit = password.length > 0;
+  const target = server || lastGood;
+  const viaTailscale = target ? isTailscaleAddress(target) : servers.some(isTailscaleAddress);
 
   return (
-    <ScreenShell centered>
+    <ScreenShell centered style={chrome.centered ? null : styles.topAligned}>
       {/* CRT Scanline */}
       <Animated.View
         pointerEvents="none"
@@ -84,16 +115,18 @@ export function LoginScreen() {
         ]}
       />
 
-      {/* Dual orbit rings + logo */}
-      <View style={styles.logoContainer}>
-        <OrbitRing size={140} dotCount={10} dotSize={3} duration={8000} opacity={0.4}>
-          <OrbitRing size={105} dotCount={6} dotSize={3} duration={6000} reverse opacity={0.6}>
-            <Animated.View style={[styles.logoRing, { opacity: glow }]}>
-              <Ionicons name="desktop-outline" size={36} color={colors.primary} />
-            </Animated.View>
+      {/* Dual orbit rings + logo. Dropped when the keyboard needs the height. */}
+      {chrome.showOrbit ? (
+        <View style={styles.logoContainer}>
+          <OrbitRing size={140} dotCount={10} dotSize={3} duration={8000} opacity={0.4}>
+            <OrbitRing size={105} dotCount={6} dotSize={3} duration={6000} reverse opacity={0.6}>
+              <Animated.View style={[styles.logoRing, { opacity: glow }]}>
+                <Ionicons name="desktop-outline" size={36} color={colors.primary} />
+              </Animated.View>
+            </OrbitRing>
           </OrbitRing>
-        </OrbitRing>
-      </View>
+        </View>
+      ) : null}
 
       <Animated.View style={{ opacity: titleFade, transform: [{ translateY: titleSlide }] }}>
         <Text style={styles.title}>PC Control</Text>
@@ -104,37 +137,75 @@ export function LoginScreen() {
       </Animated.View>
 
       <Animated.View style={{ opacity: inputFade, transform: [{ translateY: inputSlide }], width: 260 }}>
-        <TextInput
-          style={styles.input}
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-          placeholder="password"
-          placeholderTextColor={colors.primaryDim}
-          selectionColor={colors.primary}
-          cursorColor={colors.primary}
-          autoCapitalize="none"
-          autoCorrect={false}
-          onSubmitEditing={authenticate}
-          returnKeyType="go"
-        />
+        <View style={styles.inputWrap}>
+          <Input
+            style={styles.input}
+            secureTextEntry={!reveal}
+            value={password}
+            onChangeText={setPassword}
+            placeholder="password"
+            autoCapitalize="none"
+            autoCorrect={false}
+            textContentType="password"
+            onSubmitEditing={() => authenticate()}
+            returnKeyType="go"
+            accessibilityLabel="Password"
+          />
+          <Pressable
+            onPress={() => setReveal((v) => !v)}
+            style={styles.reveal}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={reveal ? "Hide password" : "Show password"}
+          >
+            <Ionicons
+              name={reveal ? "eye-off-outline" : "eye-outline"}
+              size={18}
+              color={reveal ? colors.primary : colors.textMuted}
+            />
+          </Pressable>
+        </View>
       </Animated.View>
 
       <Animated.View style={{ opacity: btnFade, transform: [{ translateY: btnSlide }] }}>
-        <Pressable
-          onPress={authenticate}
-          disabled={loading || !canSubmit}
-          style={({ pressed }) => [
-            styles.authBtn,
-            !canSubmit && styles.authBtnDisabled,
-            pressed && canSubmit && styles.authBtnPressed,
-          ]}
-        >
-          {loading
-            ? <ActivityIndicator color={colors.bg} />
-            : <Text style={styles.authText}>Connect</Text>}
-        </Pressable>
+        <PrimaryButton
+          title="Connect"
+          onPress={() => authenticate()}
+          disabled={!canSubmit}
+          loading={loading}
+          style={styles.authBtn}
+          accessibilityLabel="Connect to PC"
+        />
       </Animated.View>
+
+      {/* Unlock with the saved password, once there is one to unlock */}
+      {biometrics.available && biometrics.saved && (
+        <Animated.View style={{ opacity: btnFade, transform: [{ translateY: btnSlide }] }}>
+          <PrimaryButton
+            title="Unlock"
+            icon="finger-print-outline"
+            variant="outline"
+            onPress={unlockWithBiometrics}
+            disabled={loading}
+            style={styles.unlockBtn}
+            accessibilityLabel="Unlock with fingerprint or face"
+          />
+        </Animated.View>
+      )}
+
+      {/* Offer to remember only where the password can be protected */}
+      {biometrics.available && (
+        <Animated.View style={[styles.rememberRow, { opacity: btnFade }]}>
+          <Text style={styles.rememberText}>Remember password on this device</Text>
+          <Switch
+            value={remember}
+            onValueChange={setRememberPassword}
+            trackColor={{ false: colors.switchTrackOff, true: colors.primaryDark }}
+            thumbColor={remember ? colors.primary : colors.switchThumbOff}
+            accessibilityLabel="Remember password on this device"
+          />
+        </Animated.View>
+      )}
 
       {/* Auth error */}
       {authError && (
@@ -144,15 +215,42 @@ export function LoginScreen() {
         </Animated.View>
       )}
 
+      {/* Server target — tap to manage addresses */}
+      <Animated.View style={{ opacity: btnFade }}>
+        <Pressable
+          onPress={() => setSettingsOpen(true)}
+          style={({ pressed }) => [styles.targetRow, pressed && { opacity: 0.7 }]}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Server settings"
+        >
+          <Ionicons
+            name={viaTailscale ? "shield-checkmark-outline" : "wifi-outline"}
+            size={12}
+            color={colors.textMuted}
+          />
+          <Text style={styles.targetText}>{targetText({ loading, server, lastGood, servers })}</Text>
+          <Ionicons name="settings-outline" size={12} color={colors.textMuted} />
+        </Pressable>
+      </Animated.View>
+
       {/* Version badge */}
       <Animated.Text style={[styles.version, { opacity: btnFade }]}>
-        v1.1.1 // secure link
+        v{APP_VERSION}{" // secure link"}
       </Animated.Text>
+
+      <ServerSettingsSheet visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
+  // Overrides ScreenShell's vertical centring while keeping it horizontal, so
+  // the field sits at the top of whatever height the keyboard leaves.
+  topAligned: {
+    justifyContent: "flex-start",
+    paddingTop: spacing.xl,
+  },
   scanline: {
     position: "absolute",
     left: 0,
@@ -185,7 +283,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: font.sm,
     color: colors.textMuted,
     marginBottom: 36,
     textAlign: "center",
@@ -194,43 +292,57 @@ const styles = StyleSheet.create({
   subtitlePrefix: {
     color: colors.primaryDim,
   },
+  inputWrap: {
+    width: 260,
+    marginBottom: spacing.xxl,
+    justifyContent: "center",
+  },
   input: {
     backgroundColor: colors.surface,
-    color: colors.text,
-    fontSize: font.lg,
-    padding: 14,
     borderRadius: radius.lg,
     width: 260,
     textAlign: "center",
-    marginBottom: spacing.xxl,
-    borderWidth: 1,
-    borderColor: colors.border,
+    // Symmetric room for the reveal button, so the centred text stays centred
+    // and a long password never runs underneath the eye.
+    paddingLeft: 44,
+    paddingRight: 44,
   },
-  authBtn: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 56,
-    paddingVertical: spacing.lg,
-    borderRadius: radius.lg,
+  reveal: {
+    position: "absolute",
+    right: 2,
+    height: "100%",
+    width: 42,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  authBtnDisabled: { opacity: 0.4 },
-  authBtnPressed: { opacity: 0.85, transform: [{ scale: 0.97 }] },
-  authText: {
-    color: colors.bg,
-    fontSize: font.lg,
-    fontWeight: "700",
-    textAlign: "center",
+  authBtn: { width: 260 },
+  unlockBtn: { width: 260, marginTop: spacing.md },
+  rememberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+    width: 260,
+    marginTop: spacing.lg,
+  },
+  rememberText: {
+    flex: 1,
+    color: colors.textMuted,
+    fontSize: font.xs,
+    fontFamily: mono,
   },
   errorRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
     marginTop: spacing.lg,
+    maxWidth: 320,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-    backgroundColor: "rgba(239,83,80,0.1)",
+    backgroundColor: colors.dangerGhost,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: "rgba(239,83,80,0.25)",
+    borderColor: colors.dangerBorder,
   },
   errorText: {
     color: colors.danger,
@@ -239,11 +351,28 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flex: 1,
   },
-  version: {
-    color: colors.textDim,
+  targetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: spacing.xxl,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  targetText: {
+    color: colors.textMuted,
     fontSize: font.xs,
     fontFamily: mono,
-    marginTop: spacing.xxl,
+    letterSpacing: 0.5,
+  },
+  version: {
+    color: colors.textMuted,
+    fontSize: font.xs,
+    fontFamily: mono,
+    marginTop: spacing.md,
     letterSpacing: 1,
   },
 });

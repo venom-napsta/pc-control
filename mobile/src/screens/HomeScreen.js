@@ -1,78 +1,91 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
   View, Text, ActivityIndicator, Switch,
-  Pressable, Animated, Easing, StyleSheet,
+  Pressable, Animated, StyleSheet,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useError } from "../context/ErrorContext";
 import { usePolling } from "../hooks/usePolling";
+import { fetchParts } from "../snapshot";
 import { ScreenShell } from "../components/ScreenShell";
+import { ScreenHeader } from "../components/ScreenHeader";
+import { ServerSettingsSheet } from "../components/ServerSettingsSheet";
 import { Card } from "../components/Card";
+import { CardTitle } from "../components/CardTitle";
+import { ConnectionStrip } from "../components/ConnectionStrip";
 import { PulsingDot } from "../components/PulsingDot";
 import { GhostButton } from "../components/Button";
 import { OrbitRing } from "../components/OrbitRing";
+import { useLayout } from "../layout";
+import { saveSnapshot, loadSnapshot, formatAsOf } from "../statsCache";
 import { colors, spacing, font, radius, mono } from "../theme";
 
+export const STATUS_SNAPSHOT_KEY = "status";
+
+// Pure. Which lock state to paint, and whether it is a remembered one.
+// A cached value is only worth showing while the PC is out of reach and no
+// live answer has arrived; it is display-only, so `actionable` stays false —
+// sending /lock or /unlock off a remembered state could do the opposite of
+// what the user sees.
+export function pickLockState({ locked, connectionState, snapshot }) {
+  if (locked !== null && locked !== undefined) {
+    return { shown: locked, stale: false, at: null, actionable: true };
+  }
+  const cached = snapshot?.data?.locked;
+  if (connectionState === "unreachable" && typeof cached === "boolean") {
+    return { shown: cached, stale: true, at: snapshot.at, actionable: false };
+  }
+  return { shown: null, stale: false, at: null, actionable: false };
+}
+
 export function HomeScreen() {
-  const { api, logout } = useAuth();
+  const { api, logout, connectionState = "unknown" } = useAuth();
   const { showError } = useError();
   const navigation = useNavigation();
+  const { columns = 1 } = useLayout();
   const [locked, setLocked] = useState(null);
   const [phoneWatch, setPhoneWatch] = useState(null);
   const [toggling, setToggling] = useState(false);
   const [watchToggling, setWatchToggling] = useState(false);
-  const [latency, setLatency] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [snapshot, setSnapshot] = useState(null);
 
-  // Lock button rotation
-  const lockRotation = useRef(new Animated.Value(0)).current;
   // Lock press scale
   const lockScale = useRef(new Animated.Value(1)).current;
-  // Connection badge flash
-  const connPulse = useRef(new Animated.Value(0.6)).current;
   // Entrance animations
   const entranceFade = useRef(new Animated.Value(0)).current;
   const entranceSlide = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
-    const spinAnim = Animated.loop(
-      Animated.timing(lockRotation, {
-        toValue: 1,
-        duration: 12000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    );
-    spinAnim.start();
-
-    const pulseAnim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(connPulse, { toValue: 1, duration: 1500, useNativeDriver: true }),
-        Animated.timing(connPulse, { toValue: 0.6, duration: 1500, useNativeDriver: true }),
-      ])
-    );
-    pulseAnim.start();
-
     const entranceAnim = Animated.parallel([
       Animated.timing(entranceFade, { toValue: 1, duration: 600, useNativeDriver: true }),
       Animated.timing(entranceSlide, { toValue: 0, duration: 600, useNativeDriver: true }),
     ]);
     entranceAnim.start();
+    return () => entranceAnim.stop();
+  }, [entranceFade, entranceSlide]);
 
-    return () => { spinAnim.stop(); pulseAnim.stop(); entranceAnim.stop(); };
-  }, [lockRotation, connPulse, entranceFade, entranceSlide]);
+  // Last-known lock state, so an unreachable PC shows what it last reported.
+  useEffect(() => {
+    let alive = true;
+    loadSnapshot(STATUS_SNAPSHOT_KEY).then((snap) => {
+      if (alive && snap) setSnapshot(snap);
+    });
+    return () => { alive = false; };
+  }, []);
 
   const fetchAll = useCallback(async () => {
     try {
-      const t0 = Date.now();
-      const [s, w] = await Promise.all([
-        api("GET", "/status"),
-        api("GET", "/phone-watch/status"),
-      ]);
-      setLatency(Date.now() - t0);
-      setLocked(s.locked);
-      setPhoneWatch(w.active);
+      // One /snapshot round trip where the server supports it, two calls where
+      // it does not.
+      const { values } = await fetchParts(api, ["status", "phone_watch"]);
+      if (values.status) {
+        setLocked(values.status.locked);
+        saveSnapshot(STATUS_SNAPSHOT_KEY, values.status);
+      }
+      if (values.phone_watch) setPhoneWatch(values.phone_watch.active);
     } catch (e) {
       showError("STATUS FETCH FAILED", e);
     }
@@ -87,6 +100,7 @@ export function HomeScreen() {
       Animated.spring(lockScale, { toValue: 1, friction: 3, tension: 200, useNativeDriver: true }),
     ]).start();
 
+    if (locked === null) return;
     setToggling(true);
     try {
       await api("POST", locked ? "/unlock" : "/lock");
@@ -108,164 +122,209 @@ export function HomeScreen() {
     setWatchToggling(false);
   };
 
-  const statusColor = locked ? colors.danger : colors.primary;
+  const lock = pickLockState({ locked, connectionState, snapshot });
+  const shownLocked = lock.shown;
+  const statusColor = shownLocked ? colors.danger : colors.primary;
 
-  const lockSpin = lockRotation.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "360deg"],
-  });
+  const lockBlock = (
+    <View style={[styles.lockBlock, lock.stale && styles.stale]}>
+      {/* Status */}
+      <View style={styles.statusRow}>
+        <PulsingDot color={statusColor} />
+        <Text style={[styles.statusText, { color: statusColor, marginLeft: spacing.sm }]}>
+          {shownLocked === null ? "CONNECTING..." : shownLocked ? "LOCKED" : "UNLOCKED"}
+        </Text>
+      </View>
 
-  return (
-    <ScreenShell centered refreshing={refreshing} onRefresh={onRefresh}>
-      <Animated.View style={{ opacity: entranceFade, transform: [{ translateY: entranceSlide }], alignItems: "center", width: "100%" }}>
-
-        {/* Connection badge */}
-        {latency !== null && (
-          <Animated.View style={[styles.connBadge, { opacity: connPulse }]}>
-            <Text style={styles.connText}>
-              LINK OK {"\u2022"} {latency}ms
-            </Text>
-          </Animated.View>
-        )}
-
-        {/* Status */}
-        <View style={styles.statusRow}>
-          <PulsingDot color={statusColor} />
-          <Text style={[styles.statusText, { color: statusColor, marginLeft: spacing.sm }]}>
-            {locked === null ? "CONNECTING..." : locked ? "LOCKED" : "UNLOCKED"}
-          </Text>
-        </View>
-
-        {/* Lock button with orbit ring */}
-        <View style={styles.lockContainer}>
-          {/* Outer rotating ring */}
-          <Animated.View style={[styles.orbitRingOuter, { transform: [{ rotate: lockSpin }] }]}>
-            {Array.from({ length: 16 }).map((_, i) => {
-              const angle = (2 * Math.PI * i) / 16;
-              const r = 112;
-              const x = r + (r - 3) * Math.cos(angle) - 1.5;
-              const y = r + (r - 3) * Math.sin(angle) - 1.5;
-              const dot = i % 4 === 0 ? 4 : 2;
-              return (
-                <View
-                  key={i}
-                  style={{
-                    position: "absolute",
-                    left: x - (dot - 3) / 2,
-                    top: y - (dot - 3) / 2,
-                    width: dot,
-                    height: dot,
-                    borderRadius: dot / 2,
-                    backgroundColor: locked ? colors.danger : colors.primary,
-                    opacity: i % 4 === 0 ? 0.7 : 0.25,
-                  }}
-                />
-              );
-            })}
-          </Animated.View>
-
+      {/* Lock button inside a slow orbit ring */}
+      <View style={styles.lockContainer}>
+        <OrbitRing size={224} dotCount={16} dotSize={3} color={statusColor} duration={12000} opacity={0.5}>
           <Animated.View style={{ transform: [{ scale: lockScale }] }}>
             <Pressable
               onPress={toggleLock}
-              disabled={toggling}
+              // Inert until the first status fetch answers: before that an
+              // early tap would blindly send /lock. A remembered state from
+              // the cache paints the button but never re-enables it — acting
+              // on a stale reading could lock a PC the user just unlocked.
+              disabled={toggling || !lock.actionable}
+              accessibilityRole="button"
+              accessibilityLabel={
+                lock.stale
+                  ? `Lock control unavailable, last known ${shownLocked ? "locked" : "unlocked"}`
+                  : locked === null ? "Connecting" : locked ? "Unlock PC" : "Lock PC"
+              }
+              accessibilityState={{ disabled: toggling || !lock.actionable, busy: toggling }}
               style={({ pressed }) => [
                 styles.lockBtn,
                 {
-                  borderColor: locked ? colors.primary : colors.danger,
-                  backgroundColor: locked ? "#0D2A1A" : "#2A0D0D",
+                  borderColor: shownLocked === null ? colors.border : shownLocked ? colors.primary : colors.danger,
+                  backgroundColor: shownLocked === null ? colors.surface : shownLocked ? "#0D2A1A" : "#2A0D0D",
                 },
                 pressed && { opacity: 0.9 },
               ]}
             >
-              {toggling ? (
-                <ActivityIndicator color={colors.primary} size="large" />
+              {toggling || shownLocked === null ? (
+                <ActivityIndicator color={shownLocked === null ? colors.textMuted : colors.primary} size="large" />
               ) : (
                 <>
                   <Ionicons
-                    name={locked ? "lock-open-outline" : "lock-closed-outline"}
+                    name={shownLocked ? "lock-open-outline" : "lock-closed-outline"}
                     size={44}
-                    color={locked ? colors.primary : colors.danger}
+                    color={shownLocked ? colors.primary : colors.danger}
                   />
-                  <Text style={[styles.lockLabel, { color: locked ? colors.primary : colors.danger }]}>
-                    {locked ? "UNLOCK" : "LOCK"}
+                  <Text style={[styles.lockLabel, { color: shownLocked ? colors.primary : colors.danger }]}>
+                    {shownLocked ? "UNLOCK" : "LOCK"}
                   </Text>
                 </>
               )}
             </Pressable>
           </Animated.View>
-        </View>
+        </OrbitRing>
+      </View>
+    </View>
+  );
 
-        {/* Phone Watch */}
-        <Card style={{ alignSelf: "stretch" }}>
-          <View style={styles.cardRow}>
-            <View style={{ flex: 1 }}>
-              <View style={styles.cardTitleRow}>
-                <Ionicons name="phone-portrait-outline" size={18} color={colors.text} />
-                <Text style={styles.cardTitle}>PHONE.WATCH</Text>
-              </View>
-              <Text style={styles.cardSub}>
-                {phoneWatch ? "active \u2014 locks on disconnect" : "inactive"}
-              </Text>
+  const watchCard = (
+    <Card style={{ alignSelf: "stretch" }}>
+      <View style={styles.cardRow}>
+        <CardTitle
+          style={{ flex: 1 }}
+          icon="phone-portrait-outline"
+          title="PHONE.WATCH"
+          sub={phoneWatch ? "active — locks on disconnect" : "inactive"}
+        />
+        {watchToggling ? (
+          <ActivityIndicator color={colors.primary} />
+        ) : (
+          <Switch
+            value={phoneWatch ?? false}
+            onValueChange={toggleWatch}
+            trackColor={{ false: colors.switchTrackOff, true: colors.primaryDim }}
+            thumbColor={phoneWatch ? colors.primary : colors.switchThumbOff}
+            accessibilityLabel="Phone watch"
+          />
+        )}
+      </View>
+    </Card>
+  );
+
+  const navRow = (
+    <View style={styles.navRow}>
+      <Pressable
+        onPress={() => navigation.navigate("Monitor")}
+        accessibilityRole="button"
+        accessibilityLabel="Open system monitor"
+        style={({ pressed }) => [styles.navBtn, pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }]}
+      >
+        <Ionicons name="stats-chart-outline" size={20} color={colors.primary} />
+        <Text style={styles.navBtnLabel}>MONITOR</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => navigation.navigate("Log")}
+        accessibilityRole="button"
+        accessibilityLabel="Open audit log"
+        style={({ pressed }) => [styles.navBtn, pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }]}
+      >
+        <Ionicons name="list-outline" size={20} color={colors.primary} />
+        <Text style={styles.navBtnLabel}>LOG</Text>
+      </Pressable>
+    </View>
+  );
+
+  return (
+    <ScreenShell
+      centered
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+      header={
+        <ScreenHeader
+          right={
+            <Pressable
+              onPress={() => setSettingsOpen(true)}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Server settings"
+              style={({ pressed }) => [styles.gearBtn, pressed && { opacity: 0.6 }]}
+            >
+              <Ionicons name="settings-outline" size={20} color={colors.textMuted} />
+            </Pressable>
+          }
+        />
+      }
+    >
+      <Animated.View style={{ opacity: entranceFade, transform: [{ translateY: entranceSlide }], alignItems: "center", width: "100%" }}>
+
+        {/* Connection status */}
+        <ConnectionStrip style={styles.connStrip} />
+
+        {/* Remembered reading: say how old it is, so nobody trusts it as live. */}
+        {lock.stale && (
+          <Text style={styles.asOf} accessibilityLiveRegion="polite">
+            last known — as of {formatAsOf(lock.at)}
+          </Text>
+        )}
+
+        {columns === 2 ? (
+          <View style={styles.twoCol}>
+            <View style={styles.colLeft}>{lockBlock}</View>
+            <View style={styles.colRight}>
+              {watchCard}
+              {navRow}
             </View>
-            {watchToggling ? (
-              <ActivityIndicator color={colors.primary} />
-            ) : (
-              <Switch
-                value={phoneWatch ?? false}
-                onValueChange={toggleWatch}
-                trackColor={{ false: "#1a1a1a", true: colors.primaryDim }}
-                thumbColor={phoneWatch ? colors.primary : "#555"}
-              />
-            )}
           </View>
-        </Card>
+        ) : (
+          <>
+            {lockBlock}
+            {watchCard}
+            {navRow}
+          </>
+        )}
 
-        {/* ── Quick Nav ── */}
-        <View style={styles.navRow}>
-          <Pressable
-            onPress={() => navigation.navigate("Monitor")}
-            style={({ pressed }) => [styles.navBtn, pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }]}
-          >
-            <Ionicons name="stats-chart-outline" size={20} color={colors.primary} />
-            <Text style={styles.navBtnLabel}>MONITOR</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => navigation.navigate("Log")}
-            style={({ pressed }) => [styles.navBtn, pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }]}
-          >
-            <Ionicons name="list-outline" size={20} color={colors.primary} />
-            <Text style={styles.navBtnLabel}>LOG</Text>
-          </Pressable>
-        </View>
-
-        <GhostButton title={"\u21BB  Refresh"} onPress={fetchAll} />
         <GhostButton
           title="// disconnect"
           onPress={logout}
-          color={colors.textDim}
-          style={{ marginTop: spacing.xs }}
+          color={colors.textMuted}
+          accessibilityLabel="Disconnect from PC"
         />
       </Animated.View>
+
+      <ServerSettingsSheet visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  connBadge: {
-    backgroundColor: colors.surfaceHi,
-    paddingHorizontal: 14,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginBottom: spacing.xxl,
-    borderWidth: 1,
-    borderColor: colors.primaryDim,
+  gearBtn: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  connText: {
-    color: colors.primary,
+  asOf: {
+    color: colors.textMuted,
     fontSize: font.xs,
     fontFamily: mono,
-    fontWeight: "700",
-    letterSpacing: 1,
+    letterSpacing: 0.5,
+    marginBottom: spacing.md,
+  },
+  // Remembered, not live: dimmed so it never reads as a current reading.
+  stale: { opacity: 0.55 },
+  lockBlock: { alignItems: "center", width: "100%" },
+  // Two columns only on a landscape tablet, where there is width to spare.
+  twoCol: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.xxl,
+    width: "100%",
+  },
+  colLeft: { flex: 1, alignItems: "center" },
+  colRight: { flex: 1 },
+  connStrip: {
+    marginBottom: spacing.xxl,
+    backgroundColor: colors.surfaceHi,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   statusRow: {
     flexDirection: "row",
@@ -279,16 +338,9 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   lockContainer: {
-    width: 224,
-    height: 224,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 40,
-  },
-  orbitRingOuter: {
-    position: "absolute",
-    width: 224,
-    height: 224,
+    marginBottom: spacing.huge,
   },
   lockBtn: {
     width: 180,
@@ -309,24 +361,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-  },
-  cardTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  cardTitle: {
-    color: colors.text,
-    fontSize: font.md,
-    fontWeight: "700",
-    fontFamily: mono,
-  },
-  cardSub: {
-    color: colors.textMuted,
-    fontSize: font.xs,
-    fontFamily: mono,
-    marginTop: 4,
-    marginLeft: 26,
   },
   navRow: {
     flexDirection: "row",

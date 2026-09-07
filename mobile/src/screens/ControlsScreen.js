@@ -1,22 +1,31 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
-  View, Text, TextInput, Alert, Pressable, ActivityIndicator,
+  View, Text, Alert, Pressable, ActivityIndicator,
   Switch, StyleSheet,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { useAuth } from "../context/AuthContext";
 import { useError } from "../context/ErrorContext";
+import { usePolling } from "../hooks/usePolling";
+import { fetchParts } from "../snapshot";
 import { ScreenShell } from "../components/ScreenShell";
 import { Card } from "../components/Card";
+import { CardTitle } from "../components/CardTitle";
+import { Input } from "../components/Input";
 import { PrimaryButton } from "../components/Button";
 import { SectionHeader } from "../components/SectionHeader";
+import { confirm } from "../components/confirm";
 import { colors, spacing, font, radius, mono } from "../theme";
+
+const CONTROLS_POLL_MS = 10000;
 
 function PowerButton({ icon, label, onPress }) {
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
       style={({ pressed }) => [
         styles.powerBtn,
         pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] },
@@ -31,8 +40,9 @@ function PowerButton({ icon, label, onPress }) {
 export function ControlsScreen() {
   const { api } = useAuth();
   const { showError } = useError();
-  const [volume, setVolume] = useState(50);
-  const [volumeLoaded, setVolumeLoaded] = useState(false);
+  // null until the PC has answered once; the UI shows "—" meanwhile.
+  const [volume, setVolume] = useState(null);
+  const slidingRef = useRef(false);
   const [notifyText, setNotifyText] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -40,51 +50,66 @@ export function ControlsScreen() {
   const [wolMac, setWolMac] = useState("");
   const [wolSending, setWolSending] = useState(false);
 
-  // Media state
-  const [playing, setPlaying] = useState(false);
+  // Media state: the server reports playback plus whatever the active player
+  // exposes about the current track.
+  const [media, setMedia] = useState(null);
+  const [mediaBusy, setMediaBusy] = useState(false);
 
   // Fake busy state
   const [fakeBusy, setFakeBusy] = useState(false);
   const [fakeBusyLoading, setFakeBusyLoading] = useState(false);
 
-  useEffect(() => {
-    api("GET", "/volume")
-      .then((d) => { setVolume(d.level); setVolumeLoaded(true); })
-      .catch((e) => showError("VOLUME LOAD FAILED", e));
-    api("GET", "/media/status")
-      .then((d) => setPlaying(d.playing))
-      .catch(() => {});
-    api("GET", "/fake-busy/status")
-      .then((d) => setFakeBusy(d.active))
-      .catch((e) => showError("BUSY STATUS FAILED", e));
+  const loadControls = useCallback(async () => {
+    let values, errors;
+    try {
+      ({ values, errors } = await fetchParts(api, ["volume", "media", "fake_busy"]));
+    } catch (e) {
+      showError("CONTROLS LOAD FAILED", e);
+      return;
+    }
+    // Don't yank the slider out from under a finger mid-drag.
+    if (values.volume && !slidingRef.current) setVolume(values.volume.level);
+    if (values.media) setMedia(values.media);
+    if (values.fake_busy) setFakeBusy(!!values.fake_busy.active);
+
+    // Surface one failure per poll; three toasts in a row would only replace each other.
+    const failed = [
+      ["VOLUME LOAD FAILED", "volume"],
+      ["MEDIA STATUS FAILED", "media"],
+      ["BUSY STATUS FAILED", "fake_busy"],
+    ].find(([, name]) => errors[name]);
+    if (failed) showError(failed[0], errors[failed[1]]);
   }, [api, showError]);
 
+  const { refreshing, onRefresh } = usePolling(loadControls, CONTROLS_POLL_MS);
+
   const confirmAction = (title, action, endpoint) => {
-    Alert.alert(title, "Are you sure?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: action,
-        style: "destructive",
-        onPress: async () => {
-          try { await api("POST", endpoint); }
-          catch (e) { showError(`${action.toUpperCase()} FAILED`, e); }
-        },
+    confirm(title, "Are you sure?", {
+      confirmText: action,
+      destructive: true,
+      onConfirm: async () => {
+        try { await api("POST", endpoint); }
+        catch (e) { showError(`${action.toUpperCase()} FAILED`, e); }
       },
-    ]);
+    });
   };
 
   const commitVolume = useCallback(async (val) => {
+    slidingRef.current = false;
     try { await api("POST", "/volume", { level: Math.round(val) }); }
     catch (e) { showError("VOLUME SET FAILED", e); }
   }, [api, showError]);
 
-  const toggleMedia = async () => {
+  // toggle / next / previous all answer with the new state, so one handler
+  // covers the whole transport.
+  const mediaCommand = async (endpoint, label) => {
+    setMediaBusy(true);
     try {
-      const data = await api("POST", "/media/toggle");
-      setPlaying(data.playing);
+      setMedia(await api("POST", endpoint));
     } catch (e) {
-      showError("MEDIA TOGGLE FAILED", e);
+      showError(label, e);
     }
+    setMediaBusy(false);
   };
 
   const sendNotify = async () => {
@@ -129,7 +154,7 @@ export function ControlsScreen() {
   };
 
   return (
-    <ScreenShell>
+    <ScreenShell refreshing={refreshing} onRefresh={onRefresh}>
       {/* ── Power ── */}
       <SectionHeader>PWR.MGMT</SectionHeader>
       <View style={styles.powerRow}>
@@ -149,51 +174,97 @@ export function ControlsScreen() {
       <SectionHeader>AUDIO.CTRL</SectionHeader>
       <Card>
         <View style={styles.volumeHeader}>
-          <View style={styles.volumeTitleRow}>
-            <Ionicons name="volume-high-outline" size={18} color={colors.text} />
-            <Text style={styles.cardTitle}>VOL</Text>
-          </View>
-          <View style={styles.volumeRight}>
-            <Text style={styles.volValue}>{volume}%</Text>
-            <Pressable
-              onPress={toggleMedia}
-              style={({ pressed }) => [styles.mediaBtn, pressed && { opacity: 0.7 }]}
-            >
-              <Ionicons
-                name={playing ? "pause" : "play"}
-                size={16}
-                color={playing ? colors.primary : colors.text}
-              />
-            </Pressable>
-          </View>
+          <CardTitle icon="volume-high-outline" title="VOL" />
+          <Text style={styles.volValue}>{volume === null ? "—" : `${volume}%`}</Text>
         </View>
-        {volumeLoaded && (
+        {volume !== null ? (
           <Slider
             minimumValue={0}
             maximumValue={100}
             step={1}
             value={volume}
+            onSlidingStart={() => { slidingRef.current = true; }}
             onValueChange={(v) => setVolume(Math.round(v))}
             onSlidingComplete={commitVolume}
             minimumTrackTintColor={colors.primary}
             maximumTrackTintColor={colors.surfaceHi}
             thumbTintColor={colors.primary}
+            accessibilityLabel="Volume"
             style={{ marginTop: spacing.sm }}
           />
+        ) : (
+          <Text style={styles.volHint}>{"// waiting for the PC…"}</Text>
         )}
+      </Card>
+
+      {/* ── Media ── */}
+      <SectionHeader style={{ marginTop: spacing.xxl }}>MEDIA</SectionHeader>
+      <Card>
+        <View style={styles.mediaRow}>
+          <View style={styles.mediaMeta}>
+            {media?.title ? (
+              <>
+                <Text style={styles.mediaTitle} numberOfLines={1}>{media.title}</Text>
+                <Text style={styles.mediaSub} numberOfLines={1}>
+                  {[media.artist, media.player].filter(Boolean).join("  •  ") || "\u2014"}
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.mediaSub}>
+                {media ? "// nothing playing" : "// waiting for the PC…"}
+              </Text>
+            )}
+          </View>
+          <View style={styles.mediaTransport}>
+            <Pressable
+              onPress={() => mediaCommand("/media/previous", "PREVIOUS TRACK FAILED")}
+              disabled={mediaBusy || !media}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Previous track"
+              style={({ pressed }) => [styles.mediaBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Ionicons name="play-skip-back" size={18} color={colors.text} />
+            </Pressable>
+            <Pressable
+              onPress={() => mediaCommand("/media/toggle", "MEDIA TOGGLE FAILED")}
+              disabled={mediaBusy || !media}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={media?.playing ? "Pause media" : "Play media"}
+              style={({ pressed }) => [styles.mediaBtnMain, pressed && { opacity: 0.7 }]}
+            >
+              {mediaBusy
+                ? <ActivityIndicator color={colors.primary} size="small" />
+                : <Ionicons
+                    name={media?.playing ? "pause" : "play"}
+                    size={20}
+                    color={media?.playing ? colors.primary : colors.text}
+                  />}
+            </Pressable>
+            <Pressable
+              onPress={() => mediaCommand("/media/next", "NEXT TRACK FAILED")}
+              disabled={mediaBusy || !media}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Next track"
+              style={({ pressed }) => [styles.mediaBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Ionicons name="play-skip-forward" size={18} color={colors.text} />
+            </Pressable>
+          </View>
+        </View>
       </Card>
 
       {/* ── Notification ── */}
       <SectionHeader style={{ marginTop: spacing.xxl }}>NOTIFY.PC</SectionHeader>
       <Card>
-        <TextInput
+        <Input
           style={styles.input}
           placeholder=">> message..."
-          placeholderTextColor={colors.primaryDim}
-          selectionColor={colors.primary}
-          cursorColor={colors.primary}
           value={notifyText}
           onChangeText={setNotifyText}
+          accessibilityLabel="Notification message"
         />
         <PrimaryButton
           title="SEND"
@@ -210,16 +281,14 @@ export function ControlsScreen() {
           <Ionicons name="flash-outline" size={14} color={colors.textMuted} />
           <Text style={styles.wolInfoText}>Send magic packet to wake a PC on your network</Text>
         </View>
-        <TextInput
+        <Input
           style={styles.input}
           placeholder=">> MAC address (AA:BB:CC:DD:EE:FF)"
-          placeholderTextColor={colors.primaryDim}
-          selectionColor={colors.primary}
-          cursorColor={colors.primary}
           value={wolMac}
           onChangeText={setWolMac}
           autoCapitalize="characters"
           autoCorrect={false}
+          accessibilityLabel="MAC address"
         />
         <PrimaryButton
           title="WAKE UP"
@@ -233,23 +302,21 @@ export function ControlsScreen() {
       <SectionHeader style={{ marginTop: spacing.xxl }}>FAKE.BUSY</SectionHeader>
       <Card>
         <View style={styles.fakeBusyRow}>
-          <View style={{ flex: 1 }}>
-            <View style={styles.cardTitleRow}>
-              <Ionicons name="code-slash-outline" size={18} color={colors.text} />
-              <Text style={styles.cardTitle}>BUSY.MODE</Text>
-            </View>
-            <Text style={styles.cardSub}>
-              {fakeBusy ? 'active \u2014 VS Code shown on PC' : "inactive \u2014 tap to activate"}
-            </Text>
-          </View>
+          <CardTitle
+            style={{ flex: 1 }}
+            icon="code-slash-outline"
+            title="BUSY.MODE"
+            sub={fakeBusy ? "active — VS Code shown on PC" : "inactive — tap to activate"}
+          />
           {fakeBusyLoading ? (
             <ActivityIndicator color={colors.primary} />
           ) : (
             <Switch
               value={fakeBusy}
               onValueChange={toggleFakeBusy}
-              trackColor={{ false: "#1a1a1a", true: colors.primaryDim }}
-              thumbColor={fakeBusy ? colors.primary : "#555"}
+              trackColor={{ false: colors.switchTrackOff, true: colors.primaryDim }}
+              thumbColor={fakeBusy ? colors.primary : colors.switchThumbOff}
+              accessibilityLabel="Fake busy mode"
             />
           )}
         </View>
@@ -287,33 +354,45 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  volumeTitleRow: {
+  mediaRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    justifyContent: "space-between",
+    gap: spacing.md,
   },
-  cardTitle: {
+  mediaMeta: { flex: 1, minWidth: 0 },
+  mediaTitle: {
     color: colors.text,
-    fontSize: font.md,
+    fontSize: font.sm,
     fontWeight: "700",
     fontFamily: mono,
   },
-  cardTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  cardSub: {
+  mediaSub: {
     color: colors.textMuted,
     fontSize: font.xs,
     fontFamily: mono,
-    marginTop: 4,
-    marginLeft: 26,
+    marginTop: 2,
   },
-  volumeRight: {
+  mediaTransport: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
+    gap: spacing.xs,
+  },
+  mediaBtn: {
+    padding: spacing.sm,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mediaBtnMain: {
+    padding: spacing.sm,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceHi,
   },
   volValue: {
     color: colors.primary,
@@ -321,28 +400,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontFamily: mono,
   },
-  mediaBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceHi,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  input: {
-    backgroundColor: colors.bg,
-    color: colors.text,
-    fontSize: font.lg,
+  volHint: {
+    color: colors.textMuted,
+    fontSize: font.xs,
     fontFamily: mono,
-    padding: 14,
-    borderRadius: radius.md,
-    textAlign: "left",
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+    marginTop: spacing.md,
   },
+  input: { marginBottom: spacing.md },
   // WoL
   wolInfo: {
     flexDirection: "row",

@@ -1,12 +1,12 @@
-import { StatusBar } from "react-native";
-import { NavigationContainer } from "@react-navigation/native";
+import { useEffect, useRef } from "react";
+import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import { ErrorProvider } from "./src/context/ErrorContext";
-import { colors } from "./src/theme";
 import { TabBar } from "./src/components/TabBar";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
@@ -15,14 +15,18 @@ import { MonitorScreen } from "./src/screens/MonitorScreen";
 import { FilesScreen } from "./src/screens/FilesScreen";
 import { TerminalScreen } from "./src/screens/TerminalScreen";
 import { LogScreen } from "./src/screens/LogScreen";
+import { routeForNotification } from "./src/notificationRoutes";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
 });
+
+export const navigationRef = createNavigationContainerRef();
 
 const Tab = createBottomTabNavigator();
 const HomeStack = createNativeStackNavigator();
@@ -38,8 +42,40 @@ function HomeStackScreen() {
 }
 
 function AppTabs() {
+  // A tapped notification should land on the thing it is about. The push
+  // payload carries {kind}; anything unrecognised just opens the app.
+  const pendingRef = useRef(null);
+
+  const go = (target) => {
+    if (!target) return;
+    if (!navigationRef.isReady()) {
+      pendingRef.current = target;
+      return;
+    }
+    navigationRef.navigate(target.tab, target.screen ? { screen: target.screen } : undefined);
+  };
+
+  useEffect(() => {
+    // Cold start: the app was launched by the tap.
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => go(routeForNotification(response)))
+      .catch(() => {});
+
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      go(routeForNotification(response));
+    });
+    return () => sub.remove();
+  }, []);
+
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        const target = pendingRef.current;
+        pendingRef.current = null;
+        go(target);
+      }}
+    >
       <Tab.Navigator
         tabBar={(props) => <TabBar {...props} />}
         screenOptions={{ headerShown: false }}
@@ -57,7 +93,7 @@ function Root() {
   const { authenticated } = useAuth();
   return (
     <>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+      <StatusBar style="light" />
       {authenticated ? <AppTabs /> : <LoginScreen />}
     </>
   );

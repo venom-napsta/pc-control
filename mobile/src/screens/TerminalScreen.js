@@ -1,12 +1,20 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import {
   View, Text, Pressable, ScrollView, ActivityIndicator, StyleSheet,
+  KeyboardAvoidingView, Platform,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
-import Constants from "expo-constants";
+import * as Clipboard from "expo-clipboard";
 import { useAuth } from "../context/AuthContext";
+import { keyboardAvoidBehavior } from "../keyboard";
 import { colors, spacing, font, radius, mono } from "../theme";
+import { getTerminalHTML, startTerminalScript, toWsUrl } from "../terminalHtml";
+
+// How long the page gets to load xterm from the PC and open the WebSocket
+// before the spinner is replaced by an error.
+export const CONNECT_TIMEOUT_MS = 10000;
 
 const EXTRA_KEYS = [
   { label: "ESC", data: "\x1b" },
@@ -16,6 +24,9 @@ const EXTRA_KEYS = [
   { label: "\u2193", data: "\x1b[B", wide: true },
   { label: "\u2192", data: "\x1b[C", wide: true },
   { label: "CTRL", toggle: true },
+  { label: "PASTE", action: "paste", wide: true },
+  { label: "A-", action: "smaller" },
+  { label: "A+", action: "bigger" },
   { label: "^C", data: "\x03" },
   { label: "^Z", data: "\x1a" },
   { label: "^D", data: "\x04" },
@@ -27,135 +38,54 @@ const EXTRA_KEYS = [
   { label: "_", data: "_" },
 ];
 
-const SERVER = Constants.expoConfig?.extra?.serverUrl || process.env.EXPO_PUBLIC_SERVER || "http://localhost:2000";
+// Messages from the page that end the "connecting" phase one way or another.
+const SETTLING_MESSAGES = ["connected", "disconnected", "auth_failed", "assets_failed", "error"];
 
-function getTerminalHTML(serverUrl, pin) {
-  const wsUrl = serverUrl.replace("http://", "ws://").replace("https://", "wss://");
-  const safePin = pin.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
-  <style>
-    *{margin:0;padding:0;box-sizing:border-box}
-    html,body{height:100%;background:#0B1420;overflow:hidden}
-    #terminal{height:100%}
-    .xterm{height:100%;padding:4px}
-    .xterm-viewport::-webkit-scrollbar{width:6px}
-    .xterm-viewport::-webkit-scrollbar-thumb{background:#094A52;border-radius:3px}
-  </style>
-</head>
-<body>
-  <div id="terminal"></div>
-  <script>
-    const term = new Terminal({
-      theme:{
-        background:'#0B1420',foreground:'#e0e0e0',cursor:'#00D9C4',
-        cursorAccent:'#0B1420',selectionBackground:'#094A52',
-        black:'#000000',red:'#EF5350',green:'#4CAF50',yellow:'#FF9800',
-        blue:'#5C7CF5',magenta:'#9C27B0',cyan:'#00D9C4',white:'#FFFFFF',
-        brightBlack:'#546E7A',brightRed:'#FF8A80',brightGreen:'#69F0AE',
-        brightYellow:'#FFD740',brightBlue:'#448AFF',brightMagenta:'#EA80FC',
-        brightCyan:'#84FFFF',brightWhite:'#FFFFFF',
-      },
-      fontSize:13,fontFamily:'monospace',cursorBlink:true,cursorStyle:'bar',
-      scrollback:5000,allowTransparency:true,
-    });
-
-    const fitAddon = new FitAddon.FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(document.getElementById('terminal'));
-    fitAddon.fit();
-
-    function sendResize(){
-      const dims = fitAddon.proposeDimensions();
-      if(dims && ws && ws.readyState === WebSocket.OPEN){
-        const enc = new TextEncoder();
-        ws.send(enc.encode('\\x01RESIZE:'+dims.rows+','+dims.cols));
-      }
-    }
-
-    const ws = new WebSocket('${wsUrl}/ws/terminal?pin='+encodeURIComponent('${safePin}'));
-    ws.binaryType = 'arraybuffer';
-
-    ws.onopen = function(){
-      term.write('\\r\\n\\x1b[1;36m Connected to PC terminal \\x1b[0m\\r\\n\\r\\n');
-      setTimeout(function(){ fitAddon.fit(); sendResize(); }, 100);
-      window.ReactNativeWebView.postMessage('connected');
-    };
-
-    ws.onmessage = function(e){
-      if(e.data instanceof ArrayBuffer){
-        term.write(new Uint8Array(e.data));
-      } else {
-        term.write(e.data);
-      }
-    };
-
-    ws.onclose = function(){
-      term.write('\\r\\n\\x1b[1;31m Disconnected \\x1b[0m\\r\\n');
-      window.ReactNativeWebView.postMessage('disconnected');
-    };
-
-    ws.onerror = function(){
-      term.write('\\r\\n\\x1b[1;31m Connection error \\x1b[0m\\r\\n');
-      window.ReactNativeWebView.postMessage('error');
-    };
-
-    var ctrlOn = false;
-    window.setCtrl = function(on){ ctrlOn = on; };
-    window.sendTermKey = function(data){
-      if(ws.readyState === WebSocket.OPEN) ws.send(data);
-    };
-
-    term.onData(function(data){
-      if(ws.readyState === WebSocket.OPEN){
-        if(ctrlOn && data.length === 1){
-          var code = data.toUpperCase().charCodeAt(0);
-          if(code >= 65 && code <= 90) data = String.fromCharCode(code - 64);
-          ctrlOn = false;
-          window.ReactNativeWebView.postMessage('ctrl_off');
-        }
-        ws.send(data);
-      }
-    });
-
-    window.addEventListener('resize', function(){
-      fitAddon.fit();
-      sendResize();
-    });
-
-    new ResizeObserver(function(){
-      fitAddon.fit();
-      sendResize();
-    }).observe(document.getElementById('terminal'));
-  </script>
-</body>
-</html>`;
-}
+export const FONT_STEP = 1;
 
 export function TerminalScreen() {
-  const { password } = useAuth();
+  const { password, server } = useAuth();
   const webviewRef = useRef(null);
+  const html = useMemo(() => getTerminalHTML(server), [server]);
   const [status, setStatus] = useState("idle");
   const [key, setKey] = useState(0);
   const [ctrlActive, setCtrlActive] = useState(false);
+  const connectTimerRef = useRef(null);
+
+  const clearConnectTimer = useCallback(() => {
+    if (connectTimerRef.current) {
+      clearTimeout(connectTimerRef.current);
+      connectTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearConnectTimer, [clearConnectTimer]);
 
   const handleMessage = useCallback((event) => {
     const msg = event.nativeEvent.data;
+    if (SETTLING_MESSAGES.includes(msg)) clearConnectTimer();
     if (msg === "connected") setStatus("connected");
     else if (msg === "disconnected") setStatus("disconnected");
+    else if (msg === "auth_failed") setStatus("auth_failed");
+    else if (msg === "assets_failed") setStatus("assets_failed");
     else if (msg === "error") setStatus("error");
     else if (msg === "ctrl_off") setCtrlActive(false);
-  }, []);
+  }, [clearConnectTimer]);
 
   const sendKey = useCallback((data) => {
     const escaped = JSON.stringify(data);
     webviewRef.current?.injectJavaScript(`window.sendTermKey(${escaped}); true;`);
+  }, []);
+
+  // Send the phone's clipboard into the shell. Typing a long path or a URL on
+  // a phone keyboard is the worst part of a mobile terminal.
+  const pasteFromClipboard = useCallback(async () => {
+    const text = await Clipboard.getStringAsync();
+    if (text) sendKey(text);
+  }, [sendKey]);
+
+  const nudgeFont = useCallback((delta) => {
+    webviewRef.current?.injectJavaScript(`window.nudgeFontSize(${delta}); true;`);
   }, []);
 
   const toggleCtrl = useCallback(() => {
@@ -164,29 +94,55 @@ export function TerminalScreen() {
     webviewRef.current?.injectJavaScript(`window.setCtrl(${next}); true;`);
   }, [ctrlActive]);
 
+  const onExtraKey = useCallback((k) => {
+    if (k.toggle) return toggleCtrl();
+    if (k.action === "paste") return pasteFromClipboard();
+    if (k.action === "smaller") return nudgeFont(-FONT_STEP);
+    if (k.action === "bigger") return nudgeFont(FONT_STEP);
+    return sendKey(k.data);
+  }, [toggleCtrl, pasteFromClipboard, nudgeFont, sendKey]);
+
   const connect = () => {
     setStatus("connecting");
     setKey((k) => k + 1);
+    // If neither "connected" nor a failure arrives in time (assets never
+    // load, WebSocket hangs), stop spinning and say so.
+    clearConnectTimer();
+    connectTimerRef.current = setTimeout(() => {
+      connectTimerRef.current = null;
+      setStatus((current) => (current === "connecting" ? "error" : current));
+    }, CONNECT_TIMEOUT_MS);
   };
 
   const disconnect = () => {
+    clearConnectTimer();
     setStatus("idle");
     setKey((k) => k + 1);
   };
 
+  // Once the page has loaded, hand it the address and PIN. The PIN goes over
+  // the WebSocket as the first frame, never in a URL or the HTML.
+  const onLoadEnd = useCallback(() => {
+    if (!server) return;
+    webviewRef.current?.injectJavaScript(startTerminalScript({ wsUrl: toWsUrl(server), pin: password }));
+  }, [server, password]);
+
+  const failed = ["error", "disconnected", "auth_failed", "assets_failed"].includes(status);
   const statusColor =
     status === "connected" ? colors.success :
-    status === "error" || status === "disconnected" ? colors.danger :
+    failed ? colors.danger :
     colors.textMuted;
 
   const statusLabel =
     status === "connected" ? "CONNECTED" :
     status === "connecting" ? "CONNECTING..." :
     status === "disconnected" ? "DISCONNECTED" :
+    status === "auth_failed" ? "REJECTED" :
+    status === "assets_failed" ? "TERMINAL ASSETS DIDN'T LOAD" :
     status === "error" ? "ERROR" : "READY";
 
   return (
-    <View style={styles.screen}>
+    <SafeAreaView edges={["top"]} style={styles.screen}>
       {/* Header bar */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -197,11 +153,11 @@ export function TerminalScreen() {
         </View>
         <View style={styles.headerRight}>
           {status === "connected" ? (
-            <Pressable onPress={disconnect} style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}>
+            <Pressable onPress={disconnect} hitSlop={12} accessibilityRole="button" accessibilityLabel="Disconnect terminal" style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}>
               <Ionicons name="close-circle-outline" size={18} color={colors.danger} />
             </Pressable>
           ) : (
-            <Pressable onPress={connect} style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}>
+            <Pressable onPress={connect} hitSlop={12} accessibilityRole="button" accessibilityLabel="Connect terminal" style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.6 }]}>
               <Ionicons name="play-circle-outline" size={18} color={colors.primary} />
             </Pressable>
           )}
@@ -212,14 +168,20 @@ export function TerminalScreen() {
       {status === "idle" ? (
         <View style={styles.placeholder}>
           <Ionicons name="terminal-outline" size={48} color={colors.primaryDim} />
-          <Text style={styles.placeholderText}>// tap play to connect</Text>
+          <Text style={styles.placeholderText}>{"// tap play to connect"}</Text>
           <Pressable onPress={connect} style={({ pressed }) => [styles.connectBtn, pressed && { opacity: 0.85 }]}>
             <Ionicons name="play" size={20} color={colors.bg} />
             <Text style={styles.connectBtnText}>CONNECT</Text>
           </Pressable>
         </View>
       ) : (
-        <View style={styles.webviewContainer}>
+        // Lifts the extra-keys toolbar above the soft keyboard. Android no
+        // longer resizes the window for us under edge-to-edge, so it needs a
+        // behaviour too rather than none.
+        <KeyboardAvoidingView
+          style={styles.webviewContainer}
+          behavior={keyboardAvoidBehavior(Platform.OS)}
+        >
           {status === "connecting" && (
             <View style={styles.loadingOverlay}>
               <ActivityIndicator color={colors.primary} size="large" />
@@ -228,9 +190,10 @@ export function TerminalScreen() {
           <WebView
             key={key}
             ref={webviewRef}
-            source={{ html: getTerminalHTML(SERVER, password) }}
+            source={{ html }}
             style={styles.webview}
             onMessage={handleMessage}
+            onLoadEnd={onLoadEnd}
             javaScriptEnabled
             domStorageEnabled
             originWhitelist={["*"]}
@@ -250,7 +213,14 @@ export function TerminalScreen() {
               {EXTRA_KEYS.map((k) => (
                 <Pressable
                   key={k.label}
-                  onPress={() => k.toggle ? toggleCtrl() : sendKey(k.data)}
+                  onPress={() => onExtraKey(k)}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    k.action === "paste" ? "Paste clipboard into terminal"
+                    : k.action === "smaller" ? "Smaller terminal text"
+                    : k.action === "bigger" ? "Larger terminal text"
+                    : k.label
+                  }
                   style={({ pressed }) => [
                     styles.extraKey,
                     k.wide && styles.extraKeyWide,
@@ -269,9 +239,9 @@ export function TerminalScreen() {
               ))}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -285,7 +255,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.huge,
+    paddingTop: spacing.sm,
     paddingBottom: spacing.sm,
     backgroundColor: colors.surface,
     borderBottomWidth: 1,

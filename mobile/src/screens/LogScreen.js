@@ -1,45 +1,20 @@
 import { useState, useCallback } from "react";
-import {
-  View, Text, ScrollView, RefreshControl,
-  ActivityIndicator, Alert, Pressable, StyleSheet,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Text, FlatList, RefreshControl, ActivityIndicator, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
 import { useAuth } from "../context/AuthContext";
 import { useError } from "../context/ErrorContext";
 import { usePolling } from "../hooks/usePolling";
+import { ScreenShell } from "../components/ScreenShell";
+import { ScreenHeader } from "../components/ScreenHeader";
+import { EmptyState } from "../components/EmptyState";
 import { Card } from "../components/Card";
-import { SectionHeader } from "../components/SectionHeader";
-import { colors, spacing, font, mono } from "../theme";
+import { confirm } from "../components/confirm";
+import { getActionMeta } from "../auditActions";
+import { colors, spacing, radius, font, mono } from "../theme";
 
-const ACTION_META = {
-  lock:           { color: "#EF5350", icon: "lock-closed" },
-  unlock:         { color: "#00D9C4", icon: "lock-open" },
-  shutdown:       { color: "#FF9800", icon: "power" },
-  reboot:         { color: "#FF9800", icon: "refresh" },
-  volume:         { color: "#9C27B0", icon: "volume-high" },
-  notify:         { color: "#4CAF50", icon: "notifications" },
-  screenshot:     { color: "#5C7CF5", icon: "camera" },
-  clipboard:      { color: "#FFEB3B", icon: "clipboard" },
-  intruder:       { color: "#F44336", icon: "warning" },
-  phone_watch:    { color: "#00A896", icon: "phone-portrait" },
-  audit_cleared:  { color: "#666",    icon: "trash" },
-  file_delete:    { color: "#F44336", icon: "trash" },
-  terminal:       { color: "#4CAF50", icon: "terminal" },
-  network_scan:   { color: "#5C7CF5", icon: "wifi" },
-  webcam_kill:    { color: "#FF5722", icon: "videocam-off" },
-  fake_busy:      { color: "#9C27B0", icon: "desktop" },
-  wol:            { color: "#00D9C4", icon: "flash" },
-};
-
-function getActionMeta(action) {
-  for (const [key, meta] of Object.entries(ACTION_META)) {
-    if (action.includes(key)) return meta;
-  }
-  return { color: colors.primary, icon: "ellipse" };
-}
+const ROW_HEIGHT = 74;
 
 export function LogScreen() {
   const { api } = useAuth();
@@ -61,12 +36,13 @@ export function LogScreen() {
   const { refreshing, onRefresh } = usePolling(fetchLog, 15000);
 
   const clearLog = () => {
-    Alert.alert("Purge Log", "Clear all audit entries?", [
-      { text: "Cancel", style: "cancel" },
+    confirm(
+      "Purge log",
+      "The current entries move to audit.log.1 on the PC, so nothing is lost for good.",
       {
-        text: "Purge",
-        style: "destructive",
-        onPress: async () => {
+        confirmText: "Purge",
+        destructive: true,
+        onConfirm: async () => {
           try {
             await api("POST", "/audit/clear");
             setEntries([]);
@@ -75,40 +51,67 @@ export function LogScreen() {
           }
         },
       },
-    ]);
+    );
+  };
+
+  const header = (
+    <ScreenHeader
+      title="AUDIT.LOG"
+      onBack={navigation.canGoBack() ? () => navigation.goBack() : undefined}
+      right={
+        <>
+          <Text style={styles.countBadge}>{entries.length}</Text>
+          <Pressable
+            onPress={clearLog}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Purge audit log"
+            style={({ pressed }) => [styles.clearBtn, pressed && { opacity: 0.6 }]}
+          >
+            <Ionicons name="trash-outline" size={16} color={colors.danger} />
+            <Text style={styles.clearText}>PURGE</Text>
+          </Pressable>
+        </>
+      }
+    />
+  );
+
+  const renderItem = ({ item }) => {
+    const meta = getActionMeta(item.action);
+    const line = `${item.timestamp} | ${item.action} | ${item.ip}`;
+    return (
+      <Pressable
+        onLongPress={() => Clipboard.setStringAsync(line)}
+        delayLongPress={300}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.action} at ${item.timestamp} from ${item.ip}`}
+        accessibilityHint="Long press to copy"
+      >
+        <Card style={styles.entryCard}>
+          <View style={styles.entryRow}>
+            <Ionicons name={meta.icon} size={14} color={meta.color} />
+            <Text style={[styles.actionText, { color: meta.color }]}>{item.action}</Text>
+          </View>
+          <Text style={styles.meta}>
+            {item.timestamp}  {"•"}  {item.ip}
+          </Text>
+        </Card>
+      </Pressable>
+    );
   };
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <View style={styles.header}>
-        {navigation.canGoBack() && (
-          <Pressable
-            onPress={() => navigation.goBack()}
-            style={({ pressed }) => [styles.backRow, pressed && { opacity: 0.6 }]}
-          >
-            <Ionicons name="chevron-back" size={20} color={colors.primary} />
-            <Text style={styles.backText}>Back</Text>
-          </Pressable>
-        )}
-        <View style={styles.headerRow}>
-          <SectionHeader style={{ marginBottom: 0 }}>AUDIT.LOG</SectionHeader>
-          <View style={styles.headerActions}>
-            <Text style={styles.countBadge}>{entries.length}</Text>
-            <Pressable
-              onPress={clearLog}
-              style={({ pressed }) => [styles.clearBtn, pressed && { opacity: 0.6 }]}
-            >
-              <Ionicons name="trash-outline" size={16} color={colors.danger} />
-              <Text style={styles.clearText}>PURGE</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
+    <ScreenShell header={header} scroll={false}>
       {loading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
       ) : (
-        <ScrollView
-          style={{ flex: 1 }}
+        <FlatList
+          data={entries}
+          renderItem={renderItem}
+          // The server returns the last 50 entries, so timestamp+action+ip is
+          // unique in practice; an index key reorders every row on refresh.
+          keyExtractor={(item) => `${item.timestamp}|${item.action}|${item.ip}`}
+          getItemLayout={(_, index) => ({ length: ROW_HEIGHT, offset: ROW_HEIGHT * index, index })}
           contentContainerStyle={styles.list}
           refreshControl={
             <RefreshControl
@@ -119,87 +122,37 @@ export function LogScreen() {
               progressBackgroundColor={colors.surface}
             />
           }
-        >
-          {entries.length === 0 && (
-            <Text style={styles.empty}>// no entries</Text>
-          )}
-          {entries.map((e, i) => {
-            const meta = getActionMeta(e.action);
-            const line = `${e.timestamp} | ${e.action} | ${e.ip}`;
-            return (
-              <Pressable
-                key={i}
-                onLongPress={() => {
-                  Clipboard.setStringAsync(line);
-                  Alert.alert("Copied", line);
-                }}
-                delayLongPress={300}
-              >
-                <Card style={{ marginBottom: spacing.sm }}>
-                  <View style={styles.entryRow}>
-                    <Ionicons name={meta.icon} size={14} color={meta.color} />
-                    <Text style={[styles.actionText, { color: meta.color }]}>
-                      {e.action}
-                    </Text>
-                  </View>
-                  <Text style={styles.meta}>
-                    {e.timestamp}  {"\u2022"}  {e.ip}
-                  </Text>
-                </Card>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+          ListEmptyComponent={
+            <EmptyState
+              icon="receipt-outline"
+              title="NO ENTRIES"
+              message="Remote actions appear here as they happen."
+            />
+          }
+        />
       )}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
-  header: { padding: spacing.xl, paddingTop: spacing.md },
-  backRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-    alignSelf: "flex-start",
-    marginBottom: spacing.md,
-    paddingVertical: spacing.xs,
-    paddingRight: spacing.sm,
-  },
-  backText: {
-    color: colors.primary,
-    fontSize: font.sm,
-    fontWeight: "700",
-    fontFamily: mono,
-    letterSpacing: 0.5,
-  },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
   countBadge: {
     color: colors.textMuted,
     fontSize: font.xs,
     fontFamily: mono,
     backgroundColor: colors.surfaceHi,
-    paddingHorizontal: 8,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     overflow: "hidden",
   },
   clearBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    minHeight: 44,
   },
   clearText: {
     color: colors.danger,
@@ -207,18 +160,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontFamily: mono,
   },
-  list: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xl },
-  empty: {
-    color: colors.textDim,
-    fontFamily: mono,
-    textAlign: "center",
-    marginTop: 40,
-  },
+  list: { paddingBottom: spacing.xl },
+  entryCard: { marginBottom: spacing.sm },
   entryRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    marginBottom: 4,
+    marginBottom: spacing.xs,
   },
   actionText: { fontWeight: "700", fontSize: font.sm, fontFamily: mono },
   meta: { color: colors.textMuted, fontSize: font.xs, fontFamily: mono, marginLeft: 22 },

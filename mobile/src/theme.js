@@ -3,9 +3,11 @@ import { Platform } from "react-native";
 export const colors = {
   primary: "#00D9C4",           // luminous cyan-teal — Spindle bright end
   primaryDark: "#00A896",       // rich deep teal
-  primaryDim: "#094A52",        // muted teal for subtle elements
+  primaryDim: "#094A52",        // muted teal for subtle elements (decoration only)
   primaryGhost: "rgba(0,217,196,0.10)", // soft teal glow
   danger: "#EF5350",
+  dangerGhost: "rgba(239,83,80,0.12)",  // tinted danger background
+  dangerBorder: "rgba(239,83,80,0.3)",  // danger outline
   warning: "#FF9800",
   success: "#4CAF50",
   purple: "#9C27B0",
@@ -18,8 +20,12 @@ export const colors = {
   border: "#1A3444",            // subtle navy-teal edge
 
   text: "#FFFFFF",
-  textMuted: "#5E8899",         // cool blue-teal muted
-  textDim: "#2A3D4A",          // navy dim
+  textMuted: "#5E8899",         // cool blue-teal muted — secondary content
+  textDim: "#2A3D4A",          // navy dim — decoration only (chevrons, borders)
+  placeholder: "#4A6272",       // ~3:1 on bg; TextInput placeholders
+
+  switchTrackOff: "#1a1a1a",
+  switchThumbOff: "#555555",
 };
 
 export const spacing = {
@@ -34,6 +40,7 @@ export const spacing = {
 };
 
 export const radius = {
+  xs: 4,
   sm: 8,
   md: 12,
   lg: 16,
@@ -42,6 +49,7 @@ export const radius = {
 };
 
 export const font = {
+  xxs: 10,
   xs: 11,
   sm: 13,
   md: 15,
