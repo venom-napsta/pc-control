@@ -1,0 +1,12 @@
+[Unit]
+Description=Lock PC when phone disconnects
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/bin/bash %h/++/misc/phone_watch.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

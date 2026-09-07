@@ -1,0 +1,20 @@
+[Unit]
+Description=PC Control Server
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+# BIND_HOST, SERVER_PORT, PIN_CACHE_TTL, PAM_SERVICE ... all come from .env so
+# the unit, the server and the intruder watcher can never disagree on the port.
+EnvironmentFile=%h/++/misc/pc-control/.env
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
+WorkingDirectory=%h/++/misc/pc-control
+ExecStart=%h/anaconda3/bin/uvicorn server:app --host ${BIND_HOST} --port ${SERVER_PORT}
+# audit.log, push_token.json and intruder_photo.jpg are created owner-only.
+UMask=0077
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

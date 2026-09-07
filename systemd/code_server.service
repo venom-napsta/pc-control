@@ -1,0 +1,22 @@
+[Unit]
+Description=code-server (VS Code in the browser, for tablet development)
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+# Address, password and TLS all come from ~/.config/code-server/config.yaml,
+# which is 0600 because it holds the password in plaintext. Nothing about the
+# listener is duplicated here, so the unit and the config cannot disagree.
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
+# Start in the projects root rather than HOME, so the file tree opens somewhere
+# useful and a stray "open folder" cannot wander the whole home directory.
+WorkingDirectory=%h/++
+ExecStart=%h/.local/bin/code-server
+# Extensions, settings and the self-signed cert are created owner-only.
+UMask=0077
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

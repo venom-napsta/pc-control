@@ -1,0 +1,13 @@
+[Unit]
+Description=PC Control intruder watcher (failed desktop logins)
+After=pc_control.service
+Wants=pc_control.service
+
+[Service]
+# Reads the system journal; the user must be in the adm or systemd-journal group.
+ExecStart=/bin/bash %h/++/misc/pc-control/intruder_watcher.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
